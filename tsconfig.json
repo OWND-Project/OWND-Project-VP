@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "es2022",                                  /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
+    "lib": [
+      "es2022",
+      "dom"
+    ], /* Specify library files to be included in the compilation:  */
+    "module": "NodeNext",                                /* Specify what module code is generated. */
+    "moduleResolution": "NodeNext", /* Specify module resolution strategy: 'node' (Node.js) or 'classic' (TypeScript pre-1.6). */
+    "types": [
+      "node",
+      "mocha"
+    ],
+    "outDir": "./dist", /* Redirect output structure to the directory. */
+    "esModuleInterop": true,                             /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */
+    "forceConsistentCasingInFileNames": true,            /* Ensure that casing is correct in imports. */
+    "strict": true,                                      /* Enable all strict type-checking options. */
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true
+  },
+  "include": [
+    "./src/**/*.ts",
+    "./tests/**/*.ts"
+  ],
+  "ts-node": {
+    "files": true
+  },
+  "files": [
+    "src/types/orbit-db.d.ts"
+  ]
+}
