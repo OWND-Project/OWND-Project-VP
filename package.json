@@ -12,6 +12,9 @@
   },
   "author": "",
   "license": "ISC",
+  "resolutions": {
+    "@types/koa": "^2.15.0"
+  },
   "dependencies": {
     "@koa/cors": "^5.0.0",
     "@meeco/sd-jwt": "^1.1.0",

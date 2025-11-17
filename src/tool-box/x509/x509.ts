@@ -76,7 +76,7 @@ const extractCertificateInfo = (cert: pkijs.Certificate): CertificateInfo => {
     subject: getName(cert.subject),
     issuer: getName(cert.issuer),
     serialNumber: pvutils.bufferToHexCodes(
-      cert.serialNumber.valueBlock.valueHexView,
+      cert.serialNumber.valueBlock.valueHexView.slice().buffer,
     ),
     notBefore: cert.notBefore.value,
     notAfter: cert.notAfter.value,
