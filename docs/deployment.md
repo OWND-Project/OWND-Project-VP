@@ -1,8 +1,8 @@
-# デプロイメントガイド
+# OID4VP Verifier - デプロイメントガイド
 
 ## 概要
 
-このドキュメントでは、boolcheckシステムの各ノード（BOOL_NODE、API_NODE、VERIFIER_NODE）のデプロイメント手順、環境設定、ネットワーク構成、トラブルシューティングについて説明します。
+このドキュメントでは、OID4VP Verifierシステムのデプロイメント手順、環境設定、トラブルシューティングについて説明します。
 
 ## 前提条件
 
@@ -11,18 +11,18 @@
 - **OS**: Linux (Ubuntu 20.04+推奨), macOS 10.15+
 - **Node.js**: v20以上
 - **メモリ**: 最小2GB、推奨4GB以上
-- **ディスク**: 最小10GB、推奨50GB以上（OrbitDB/IPFSデータ蓄積のため）
-- **ネットワーク**: インターネット接続、libp2p通信用のポート開放
+- **ディスク**: 最小10GB、推奨20GB以上
+- **ネットワーク**: HTTPS通信用のポート開放（443または任意のポート）
 
 ### 依存ソフトウェア
 
 ```bash
 # Node.js 20のインストール（nvmを使用）
-nvm install stable --latest-npm
+nvm install 20
 nvm use 20
 
-# Yarnのインストール（必要に応じて）
-npm install -g yarn
+# npmのアップデート
+npm install -g npm@latest
 ```
 
 ## プロジェクトセットアップ
@@ -30,776 +30,510 @@ npm install -g yarn
 ### 1. リポジトリクローン
 
 ```bash
-git clone https://github.com/your-org/boolcheck-backend.git
-cd boolcheck-backend
+git clone https://github.com/your-org/OWND-Project-VP.git
+cd OWND-Project-VP
 ```
 
 ### 2. 依存関係インストール
 
 ```bash
-yarn install
+npm install
 ```
 
-## BOOL_NODE デプロイメント
-
-### 1. ビルド
+### 3. ビルド
 
 ```bash
-yarn run build:bool_node
+npm run build
 ```
 
-**成果物**: `apps/bool_node/src/`
+**成果物**: `dist/src/`
 
-### 2. 環境設定
+## 環境設定
 
-```bash
-cp .env.template.bool_node ./apps/bool_node/.env
-```
+### 環境変数設定
 
-**環境変数設定** (`apps/bool_node/.env`):
+`.env` ファイルを作成します:
 
 ```bash
 # アプリケーション設定
-APP_TYPE=BOOL_NODE
 APP_PORT=3000
 NODE_ENV=prod
-APP_HOST=https://your-frontend-app.com  # フロントエンドアプリのオリジン
-
-# OrbitDB/IPFS設定
-PEER_ADDR=/ip4/0.0.0.0/tcp/4000
-ORBITDB_ROOT_ID_KEY=main_peer
-IPFS_PATH=./ipfs/blocks
-ORBITDB_PATH=./orbitdb
-KEYSTORE_PATH=./keystore
-PEER_ID_PATH=./peer-id.bin  # 固定PeerIDを使用
-
-# SQLite設定
-DATABASE_FILEPATH=./database.sqlite
-
-# MAIN_PEER_HOST（API_NODEが接続するため、外部からアクセス可能なURLを指定）
-# ※BOOL_NODE自身は使用しないが、API_NODEの設定に必要
-```
-
-### 3. Peer ID生成
-
-初回起動時に自動生成されます。`PEER_ID_PATH`で指定したファイルに保存されます。
-
-**手動生成（必要に応じて）**:
-```bash
-node -e "
-const { createEd25519PeerId } = require('@libp2p/peer-id-factory');
-const { marshalPrivateKey } = require('@libp2p/peer-id');
-const fs = require('fs');
-
-(async () => {
-  const peerId = await createEd25519PeerId();
-  const privateKey = marshalPrivateKey(peerId);
-  fs.writeFileSync('./apps/bool_node/peer-id.bin', privateKey);
-  console.log('PeerID:', peerId.toString());
-})();
-"
-```
-
-### 4. 起動
-
-```bash
-cd apps/bool_node
-nvm use 20
-node --enable-source-maps src/index.js
-```
-
-**または**:
-```bash
-yarn run start:bool_node
-```
-
-### 5. 動作確認
-
-```bash
-# ヘルスチェック
-curl http://localhost:3000/health-check
-
-# Peer情報取得
-curl http://localhost:3000/admin/peer/info
-```
-
-**期待されるレスポンス**:
-```json
-{
-  "identity": {
-    "hash": "zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz"
-  },
-  "multiaddrs": [
-    "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooW...",
-    "/ip4/192.168.1.100/tcp/4000/p2p/12D3KooW..."
-  ]
-}
-```
-
-### 6. ネットワーク設定
-
-**ファイアウォール**:
-```bash
-# ポート開放（Ubuntu/ufw）
-sudo ufw allow 3000/tcp   # API
-sudo ufw allow 4000/tcp   # libp2p
-```
-
-**リバースプロキシ（Nginx）**:
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name api.boolcheck.com;
-
-    ssl_certificate /path/to/fullchain.pem;
-    ssl_certificate_key /path/to/privkey.pem;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
----
-
-## API_NODE デプロイメント
-
-### 1. ビルド
-
-```bash
-yarn run build:api_node
-```
-
-### 2. 環境設定
-
-```bash
-cp .env.template.api_node ./apps/api_node/.env
-```
-
-**環境変数設定** (`apps/api_node/.env`):
-
-```bash
-# アプリケーション設定
-APP_TYPE=API_NODE
-APP_PORT=3001
-NODE_ENV=prod
-
-# OrbitDB/IPFS設定
-PEER_ADDR=/ip4/0.0.0.0/tcp/4001
-ORBITDB_ROOT_ID_KEY=peer2
-IPFS_PATH=./ipfs/blocks
-ORBITDB_PATH=./orbitdb
-KEYSTORE_PATH=./keystore
-
-# BOOL_NODE接続設定
-MAIN_PEER_HOST=http://localhost:3000  # BOOL_NODEのURL（内部ネットワークの場合）
-# MAIN_PEER_HOST=https://api.boolcheck.com  # BOOL_NODEのURL（外部ネットワークの場合）
-
-# SQLite設定
-DATABASE_FILEPATH=./database.sqlite
-```
-
-### 3. 起動
-
-```bash
-cd apps/api_node
-nvm use 20
-node --enable-source-maps src/index.js
-```
-
-**または**:
-```bash
-yarn run start:api_node
-```
-
-### 4. 動作確認
-
-**同期状態確認**:
-```bash
-# BOOL_NODEからDB情報取得
-curl http://localhost:3000/admin/db/info
-
-# API_NODEのURL一覧取得（同期後）
-curl http://localhost:3001/database/urls
-```
-
-### 5. 初回同期
-
-初回起動時、API_NODEは以下のプロセスで同期：
-
-1. BOOL_NODEの`/admin/db/info`にアクセス
-2. OrbitDBアドレスとPeer情報を取得
-3. BOOL_NODEにlibp2p dialで接続
-4. OrbitDBドキュメントを開いて全履歴を同期
-5. 同期完了後、リアルタイム更新を受信
-
-**同期ログ例**:
-```
-info: connect to: http://localhost:3000
-info: Dialing to /ip4/127.0.0.1/tcp/4000/p2p/12D3KooW...
-info: Successfully connected to /ip4/127.0.0.1/tcp/4000/p2p/12D3KooW...
-info: sync all urls
-info: 1000 registered
-info: 2000 registered
-info: Execution Time(2345 count): 15000ms
-info: sync all claims
-...
-```
-
-### 6. スケールアウト
-
-複数のAPI_NODEを起動して負荷分散：
-
-```bash
-# API_NODE 1
-APP_PORT=3001 PEER_ADDR=/ip4/0.0.0.0/tcp/4001 node src/index.js
-
-# API_NODE 2
-APP_PORT=3011 PEER_ADDR=/ip4/0.0.0.0/tcp/4011 node src/index.js
-
-# API_NODE 3
-APP_PORT=3021 PEER_ADDR=/ip4/0.0.0.0/tcp/4021 node src/index.js
-```
-
-**ロードバランサ（Nginx）**:
-```nginx
-upstream api_nodes {
-    server localhost:3001;
-    server localhost:3011;
-    server localhost:3021;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name api-read.boolcheck.com;
-
-    location / {
-        proxy_pass http://api_nodes;
-    }
-}
-```
-
----
-
-## VERIFIER_NODE デプロイメント
-
-### 1. ビルド
-
-```bash
-yarn run build:verifier_node
-```
-
-### 2. 環境設定
-
-```bash
-cp .env.template.verifier_node ./apps/verifier_node/.env
-```
-
-**環境変数設定** (`apps/verifier_node/.env`):
-
-```bash
-# アプリケーション設定
-APP_TYPE=VERIFIER_NODE
-APP_PORT=3002
-APP_HOST=https://your-frontend-app.com  # フロントエンドアプリのオリジン
-
-# OrbitDB/IPFS設定（OID4VP用）
-ORBITDB_ROOT_ID_KEY=oid4vp
-OID4VP_IPFS_PATH=./oid4vp/ipfs/blocks
-OID4VP_ORBITDB_PATH=./oid4vp/orbitdb
-OID4VP_KEYSTORE_PATH=./oid4vp/keystore
+APP_HOST=https://your-frontend-app.com  # フロントエンドアプリのオリジン（CORS用）
 
 # OID4VP設定
+OID4VP_CLIENT_ID=https://your-verifier.com
 OID4VP_CLIENT_ID_SCHEME=x509_san_dns
+OID4VP_REQUEST_HOST=oid4vp://your-verifier.com
+OID4VP_REQUEST_URI=https://your-verifier.com/oid4vp/request
+OID4VP_RESPONSE_URI=https://your-verifier.com/oid4vp/responses
+OID4VP_REDIRECT_URI=https://your-frontend-app.com/callback
+OID4VP_PRESENTATION_DEFINITION_URI=https://your-verifier.com/oid4vp/presentation-definition
+
+# Verifier証明書（本番環境）
+# 有効なX.509証明書とJWKを設定
 OID4VP_VERIFIER_JWK='{"kty":"EC","crv":"P-256","x":"...","d":"..."}'
 OID4VP_VERIFIER_X5C='-----BEGIN CERTIFICATE-----
 MIICx...
------END CERTIFICATE-----
------BEGIN CERTIFICATE-----
-MIICy...
 -----END CERTIFICATE-----'
 
-# OID4VP URL設定
-OID4VP_REQUEST_HOST=oid4vp://your-domain.com/request
-OID4VP_REQUEST_URI=https://your-domain.com/oid4vp/request
-OID4VP_RESPONSE_URI=https://your-domain.com/oid4vp/responses
-OID4VP_REDIRECT_URI=https://your-domain.com/oid4vp/redirect
-OID4VP_CLIENT_ID=https://your-domain.com
-OID4VP_PRESENTATION_DEFINITION_URI=https://your-domain.com/oid4vp/presentation-definitions
+# SQLite設定
+DATABASE_FILEPATH=./data/database.sqlite
 
-# OID4VP タイムアウト設定
-OID4VP_REQUEST_EXPIRED_IN_AT_RESPONSE_ENDPOINT=600
-OID4VP_REQUEST_EXPIRED_IN_AT_VERIFIER=600
+# Cookie Secret（ランダムな文字列を生成）
+OID4VP_COOKIE_SECRET=<generate-random-secret-here>
+
+# ログレベル
+LOG_LEVEL=info
+
+# オプション: タイムアウト設定
+OID4VP_REQUEST_EXPIRED_IN=600  # 秒（デフォルト: 600秒 = 10分）
 OID4VP_RESPONSE_EXPIRED_IN=600
 POST_SESSION_EXPIRED_IN=600
 POST_STATE_EXPIRED_IN=600
 
-# セッション設定
-COOKIE_SECRET=your-random-secret-key-here
-
-# Client Metadata
-OID4VP_CLIENT_METADATA_NAME=boolcheck.com
-OID4VP_CLIENT_METADATA_LOGO_URI=https://your-domain.com/logo.png
-OID4VP_CLIENT_METADATA_POLICY_URI=https://your-domain.com/policy.html
-OID4VP_CLIENT_METADATA_TOS_URI=https://your-domain.com/tos.html
-
-# BOOL_NODE接続設定
-MAIN_NODE_HOST=http://localhost:3000  # BOOL_NODEのURL
+# オプション: VP Tokenサイズ制限
+OID4VP_VERIFIER_AUTH_RESPONSE_LIMIT=1mb
 ```
 
-### 3. X.509証明書とJWK生成
-
-#### JWK生成
+### Cookie Secretの生成
 
 ```bash
-npm install -g elliptic-jwk
+# ランダムな文字列を生成
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
+### X.509証明書の準備
+
+本番環境では、有効なX.509証明書が必要です。
+
+#### 1. Let's Encryptで証明書を取得（推奨）
+
+```bash
+# Certbotのインストール
+sudo apt-get update
+sudo apt-get install certbot
+
+# 証明書取得
+sudo certbot certonly --standalone -d your-verifier.com
+```
+
+#### 2. 証明書をPEM形式で読み込み
+
+```bash
+# 証明書をBase64エンコード
+cat /etc/letsencrypt/live/your-verifier.com/fullchain.pem | base64 -w 0
+
+# 秘密鍵からJWKを生成（elliptic-jwkを使用）
 node -e "
-const { genkey } = require('elliptic-jwk');
-
-(async () => {
-  const jwk = await genkey('P-256', true);
-  console.log('JWK:', JSON.stringify(jwk));
-})();
+const fs = require('fs');
+const ellipticJwk = require('elliptic-jwk');
+const privateKey = fs.readFileSync('/etc/letsencrypt/live/your-verifier.com/privkey.pem', 'utf8');
+const jwk = ellipticJwk.privateKeyToJWK(privateKey);
+console.log(JSON.stringify(jwk));
 "
 ```
 
-#### X.509証明書生成（自己署名証明書の例）
+#### 3. 環境変数に設定
+
+`.env` ファイルに証明書とJWKを設定します。
+
+## デプロイ方法
+
+### Option 1: 直接実行
 
 ```bash
-openssl req -x509 -newkey ec:<(openssl ecparam -name prime256v1) \
-  -keyout key.pem -out cert.pem -days 365 -nodes \
-  -subj "/CN=your-domain.com" \
-  -addext "subjectAltName=DNS:your-domain.com"
+# 本番モードで起動
+NODE_ENV=prod npm start
 ```
 
-**証明書チェーンをPEM形式に変換**:
-```bash
-cat cert.pem intermediate.pem root.pem > chain.pem
-```
+### Option 2: PM2を使用（推奨）
 
-**環境変数に設定**:
-```bash
-OID4VP_VERIFIER_X5C=$(cat chain.pem)
-```
+PM2は、Node.jsアプリケーションのプロセス管理ツールです。
 
-### 4. 起動
-
-```bash
-cd apps/verifier_node
-nvm use 20
-node --enable-source-maps src/index.js
-```
-
-**または**:
-```bash
-yarn run start:verifier_node
-```
-
-### 5. 動作確認
-
-```bash
-# ヘルスチェック
-curl http://localhost:3002/health-check
-
-# 認証リクエスト生成（テスト）
-curl -X POST http://localhost:3002/oid4vp/auth-request \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com","comment":"test","boolValue":1}'
-```
-
----
-
-## 本番環境デプロイメント
-
-### デプロイメント構成
-
-```
-┌──────────────────────────────────────────────┐
-│          Production Environment              │
-├──────────────────────────────────────────────┤
-│                                              │
-│  ┌─────────────┐          ┌──────────────┐  │
-│  │ Load Balancer│         │ Load Balancer│  │
-│  │  (Nginx)     │         │   (Nginx)    │  │
-│  └──────┬───────┘         └──────┬───────┘  │
-│         │                        │          │
-│    ┌────▼────┐              ┌────▼────┐    │
-│    │API_NODE │              │VERIFIER │    │
-│    │   x3    │              │  NODE   │    │
-│    └────┬────┘              └────┬────┘    │
-│         │                        │          │
-│         │ IPFS/OrbitDB           │ HTTP     │
-│         ▼                        ▼          │
-│    ┌─────────────────────────────────────┐  │
-│    │          BOOL_NODE                  │  │
-│    │         (Single Master)             │  │
-│    └─────────────────────────────────────┘  │
-│                                              │
-└──────────────────────────────────────────────┘
-```
-
-### プロセス管理（PM2）
+#### PM2のインストール
 
 ```bash
 npm install -g pm2
 ```
 
-**PM2設定ファイル** (`ecosystem.config.js`):
+#### PM2設定ファイル
+
+`ecosystem.config.js` を作成:
 
 ```javascript
 module.exports = {
-  apps: [
-    {
-      name: "bool_node",
-      script: "./apps/bool_node/src/index.js",
-      cwd: "/path/to/boolcheck-backend",
-      env: {
-        NODE_ENV: "prod",
-        APP_TYPE: "BOOL_NODE",
-        APP_PORT: 3000,
-      },
-      instances: 1,
-      exec_mode: "fork",
-      node_args: "--enable-source-maps",
+  apps: [{
+    name: 'oid4vp-verifier',
+    script: './dist/src/index.js',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'prod',
+      APP_PORT: 3000,
     },
-    {
-      name: "api_node",
-      script: "./apps/api_node/src/index.js",
-      cwd: "/path/to/boolcheck-backend",
-      env: {
-        NODE_ENV: "prod",
-        APP_TYPE: "API_NODE",
-        APP_PORT: 3001,
-      },
-      instances: 3,  // スケールアウト
-      exec_mode: "cluster",
-      node_args: "--enable-source-maps",
-    },
-    {
-      name: "verifier_node",
-      script: "./apps/verifier_node/src/index.js",
-      cwd: "/path/to/boolcheck-backend",
-      env: {
-        NODE_ENV: "prod",
-        APP_TYPE: "VERIFIER_NODE",
-        APP_PORT: 3002,
-      },
-      instances: 1,
-      exec_mode: "fork",
-      node_args: "--enable-source-maps",
-    },
-  ],
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+  }]
 };
 ```
 
-**PM2コマンド**:
+#### PM2で起動
+
 ```bash
-# 起動
+# アプリケーション起動
 pm2 start ecosystem.config.js
 
-# 停止
-pm2 stop all
-
-# 再起動
-pm2 restart all
+# ステータス確認
+pm2 status
 
 # ログ確認
-pm2 logs
+pm2 logs oid4vp-verifier
 
-# プロセス監視
-pm2 monit
+# アプリケーション再起動
+pm2 restart oid4vp-verifier
 
 # 自動起動設定
 pm2 startup
 pm2 save
 ```
 
-### Docker化（将来的な改善）
+### Option 3: Dockerを使用
 
-**Dockerfile例**:
+#### Dockerfile
 
 ```dockerfile
 FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+# 依存関係のコピーとインストール
+COPY package*.json ./
+RUN npm ci --only=production
 
-COPY . .
-RUN yarn run build:bool_node
+# ソースコードのコピー
+COPY dist ./dist
 
-WORKDIR /app/apps/bool_node
+# ポート公開
+EXPOSE 3000
 
-ENV NODE_ENV=prod
-EXPOSE 3000 4000
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD node -e "require('http').get('http://localhost:3000/health-check', (r) => {process.exit(r.statusCode === 204 ? 0 : 1)})"
 
-CMD ["node", "--enable-source-maps", "src/index.js"]
+# 起動
+CMD ["node", "dist/src/index.js"]
 ```
 
-**docker-compose.yml例**:
+#### docker-compose.yml
 
 ```yaml
 version: '3.8'
 
 services:
-  bool_node:
-    build:
-      context: .
-      dockerfile: Dockerfile.bool_node
+  oid4vp-verifier:
+    build: .
     ports:
       - "3000:3000"
-      - "4000:4000"
+    environment:
+      - NODE_ENV=prod
+      - APP_PORT=3000
+    env_file:
+      - .env
     volumes:
-      - ./apps/bool_node/.env:/app/apps/bool_node/.env
-      - bool_node_data:/app/apps/bool_node
+      - ./data:/app/data
     restart: unless-stopped
-
-  api_node:
-    build:
-      context: .
-      dockerfile: Dockerfile.api_node
-    ports:
-      - "3001:3001"
-      - "4001:4001"
-    volumes:
-      - ./apps/api_node/.env:/app/apps/api_node/.env
-      - api_node_data:/app/apps/api_node
-    depends_on:
-      - bool_node
-    restart: unless-stopped
-
-  verifier_node:
-    build:
-      context: .
-      dockerfile: Dockerfile.verifier_node
-    ports:
-      - "3002:3002"
-    volumes:
-      - ./apps/verifier_node/.env:/app/apps/verifier_node/.env
-      - verifier_node_data:/app/apps/verifier_node
-    depends_on:
-      - bool_node
-    restart: unless-stopped
-
-volumes:
-  bool_node_data:
-  api_node_data:
-  verifier_node_data:
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health-check', (r) => {process.exit(r.statusCode === 204 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 ```
 
----
+#### Dockerビルドと起動
+
+```bash
+# イメージビルド
+docker-compose build
+
+# コンテナ起動
+docker-compose up -d
+
+# ログ確認
+docker-compose logs -f
+
+# ステータス確認
+docker-compose ps
+```
+
+## リバースプロキシ設定
+
+### Nginx設定例
+
+`/etc/nginx/sites-available/oid4vp-verifier`:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-verifier.com;
+
+    # SSL証明書
+    ssl_certificate /etc/letsencrypt/live/your-verifier.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-verifier.com/privkey.pem;
+
+    # SSL設定
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers on;
+
+    # プロキシ設定
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+
+        # タイムアウト設定
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # ヘルスチェック
+    location /health-check {
+        proxy_pass http://localhost:3000/health-check;
+        access_log off;
+    }
+}
+
+# HTTPからHTTPSへリダイレクト
+server {
+    listen 80;
+    server_name your-verifier.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+Nginxを有効化して再起動:
+
+```bash
+# シンボリックリンク作成
+sudo ln -s /etc/nginx/sites-available/oid4vp-verifier /etc/nginx/sites-enabled/
+
+# 設定テスト
+sudo nginx -t
+
+# Nginx再起動
+sudo systemctl restart nginx
+```
+
+## データベース管理
+
+### SQLiteバックアップ
+
+```bash
+# バックアップスクリプト
+#!/bin/bash
+BACKUP_DIR="./backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+DB_FILE="./data/database.sqlite"
+BACKUP_FILE="$BACKUP_DIR/database_$DATE.sqlite"
+
+mkdir -p $BACKUP_DIR
+sqlite3 $DB_FILE ".backup $BACKUP_FILE"
+echo "Backup created: $BACKUP_FILE"
+
+# 古いバックアップを削除（30日以上前）
+find $BACKUP_DIR -name "database_*.sqlite" -mtime +30 -delete
+```
+
+### cronで自動バックアップ
+
+```bash
+# crontabに追加
+crontab -e
+
+# 毎日午前2時にバックアップ
+0 2 * * * /path/to/backup.sh >> /path/to/backup.log 2>&1
+```
+
+### 期限切れデータのクリーンアップ
+
+SQLiteには自動クリーンアップ機能はないため、定期的にクリーンアップスクリプトを実行します。
+
+```javascript
+// cleanup.js
+const sqlite3 = require('sqlite3');
+const db = new sqlite3.Database('./data/database.sqlite');
+
+const now = Date.now();
+
+// 期限切れセッションを削除
+db.run('DELETE FROM sessions WHERE expires_at < ?', [now], (err) => {
+  if (err) console.error('Failed to clean up sessions:', err);
+  else console.log('Sessions cleaned up');
+});
+
+// 期限切れレスポンスコードを削除
+db.run('DELETE FROM response_codes WHERE expires_at < ?', [now], (err) => {
+  if (err) console.error('Failed to clean up response_codes:', err);
+  else console.log('Response codes cleaned up');
+});
+
+// 期限切れ状態を削除
+db.run('DELETE FROM post_states WHERE expires_at < ?', [now], (err) => {
+  if (err) console.error('Failed to clean up post_states:', err);
+  else console.log('Post states cleaned up');
+});
+
+db.close();
+```
+
+```bash
+# cronで毎時実行
+crontab -e
+
+# 毎時0分にクリーンアップ
+0 * * * * node /path/to/cleanup.js >> /path/to/cleanup.log 2>&1
+```
+
+## 監視とログ
+
+### ログ管理
+
+```bash
+# PM2のログローテーション
+pm2 install pm2-logrotate
+
+# ログローテーション設定
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 30
+```
+
+### ヘルスチェック
+
+```bash
+# シンプルなヘルスチェックスクリプト
+#!/bin/bash
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health-check)
+
+if [ $HTTP_CODE -eq 204 ]; then
+    echo "OK: OID4VP Verifier is healthy"
+    exit 0
+else
+    echo "ERROR: OID4VP Verifier returned $HTTP_CODE"
+    exit 1
+fi
+```
+
+### メトリクス収集（オプション）
+
+Prometheusなどのモニタリングツールと連携する場合は、専用のメトリクスエンドポイントを実装します。
 
 ## トラブルシューティング
 
-### 1. BOOL_NODEとAPI_NODEの接続失敗
+### 問題: アプリケーションが起動しない
 
-**症状**:
-```
-error: wait main boot..
-error: Failed to dial /ip4/...
-```
-
-**原因**:
-- BOOL_NODEが起動していない
-- ファイアウォールでlibp2pポートがブロックされている
-- `MAIN_PEER_HOST`の設定が間違っている
-
-**解決策**:
 ```bash
-# 1. BOOL_NODEが起動しているか確認
-curl http://localhost:3000/admin/peer/info
+# ログ確認
+pm2 logs oid4vp-verifier
 
-# 2. ファイアウォール確認
-sudo ufw status
-sudo ufw allow 4000/tcp
+# 環境変数確認
+printenv | grep OID4VP
 
-# 3. libp2pポートが開いているか確認
-netstat -tuln | grep 4000
-
-# 4. MAIN_PEER_HOSTの設定確認
-cat apps/api_node/.env | grep MAIN_PEER_HOST
+# ポート競合確認
+lsof -i :3000
 ```
 
-### 2. OrbitDB同期が遅い
+### 問題: VP Token検証失敗
 
-**症状**:
-- API_NODE起動時の同期に時間がかかる
-- 大量のデータで同期が完了しない
-
-**解決策**:
-
-**同期履歴の確認**:
 ```bash
-sqlite3 apps/api_node/database.sqlite "SELECT * FROM sync_histories;"
+# 証明書の有効性確認
+openssl x509 -in /etc/letsencrypt/live/your-verifier.com/fullchain.pem -text -noout
+
+# ログレベルをdebugに設定して詳細確認
+LOG_LEVEL=debug pm2 restart oid4vp-verifier
 ```
 
-**同期履歴のリセット**（全履歴を再同期）:
+### 問題: データベースロック
+
 ```bash
-sqlite3 apps/api_node/database.sqlite "DELETE FROM sync_histories;"
+# SQLiteのWALモードを確認
+sqlite3 ./data/database.sqlite "PRAGMA journal_mode;"
+
+# WALモードに変更（推奨）
+sqlite3 ./data/database.sqlite "PRAGMA journal_mode=WAL;"
 ```
 
-**OrbitDBとIPFSのデータ削除**（完全リセット）:
+### 問題: メモリ不足
+
 ```bash
-cd apps/api_node
-rm -rf ./orbitdb ./ipfs
-# 再起動すると全データを再同期
-```
-
-### 3. OID4VP認証エラー
-
-**症状**:
-```
-error: Certificate chain verification failed
-error: JWT signature verification failed
-```
-
-**原因**:
-- X.509証明書が無効
-- JWKが間違っている
-- 証明書のSANが`client_id`と一致しない
-
-**解決策**:
-```bash
-# 1. 証明書の確認
-openssl x509 -in cert.pem -text -noout
-
-# 2. SANの確認
-openssl x509 -in cert.pem -text -noout | grep DNS
-
-# 3. JWKの確認
-node -e "console.log(JSON.parse(process.env.OID4VP_VERIFIER_JWK))"
-
-# 4. 環境変数ENVIRONMENT=local でX.509検証をスキップ（開発時のみ）
-ENVIRONMENT=local node src/index.js
-```
-
-### 4. セッション期限切れ
-
-**症状**:
-```
-error: Session expired or invalid
-```
-
-**原因**:
-- セッションの有効期限が短すぎる
-- Cookieが保存されていない
-
-**解決策**:
-```bash
-# セッション有効期限を延長
-POST_SESSION_EXPIRED_IN=3600  # 1時間
-
-# Cookieが保存されているか確認（ブラウザ開発者ツール）
-# Application > Cookies > koa.sess
-```
-
-### 5. CORS エラー
-
-**症状**:
-```
-error: Access to fetch at 'http://localhost:3000/database/urls' from origin 'http://localhost:3001' has been blocked by CORS policy
-```
-
-**原因**:
-- `APP_HOST`の設定が間違っている
-- CORSの`origin`が正しく設定されていない
-
-**解決策**:
-```bash
-# APP_HOST設定確認
-cat apps/bool_node/.env | grep APP_HOST
-
-# APP_HOSTをフロントエンドのオリジンに設定
-APP_HOST=https://your-frontend-app.com
-```
-
----
-
-## バックアップ・リストア
-
-### バックアップ
-
-**OrbitDB/IPFSデータ**:
-```bash
-cd apps/bool_node
-tar -czf backup_$(date +%Y%m%d).tar.gz \
-  ./orbitdb ./ipfs ./keystore ./database.sqlite ./peer-id.bin
-```
-
-**API経由のバックアップ**:
-```bash
-curl http://localhost:3000/database/backup > backup.json
-```
-
-### リストア
-
-**OrbitDB/IPFSデータ**:
-```bash
-cd apps/bool_node
-tar -xzf backup_20250115.tar.gz
-```
-
-**API経由のリストア**:
-```bash
-curl -X POST http://localhost:3000/database/restore \
-  -H "Content-Type: application/json" \
-  -d @backup.json
-```
-
----
-
-## 監視・ロギング
-
-### ログ設定
-
-**Winston設定** (`src/services/logging-service.ts`):
-
-本番環境では、ログをファイルまたはクラウドロギングサービスに出力：
-
-```typescript
-const logger = winston.createLogger({
-  level: "info",
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: "error.log", level: "error" }),
-    new winston.transports.File({ filename: "combined.log" }),
-  ],
-});
-```
-
-### 監視ツール
-
-**PM2監視**:
-```bash
+# メモリ使用量確認
 pm2 monit
+
+# メモリ制限を増やす（ecosystem.config.jsで設定）
+max_memory_restart: '2G'
 ```
 
-**ログ監視**:
+## セキュリティベストプラクティス
+
+1. **HTTPS必須**: 本番環境では必ずHTTPSを使用
+2. **Cookie Secret**: ランダムで長い文字列を使用
+3. **証明書管理**: Let's Encryptで自動更新
+4. **ファイアウォール**: 必要なポートのみ開放
+5. **定期アップデート**: Node.jsと依存パッケージを定期的に更新
+6. **バックアップ**: SQLiteデータベースの定期バックアップ
+7. **ログ監視**: エラーログの定期確認
+
+## 更新とメンテナンス
+
+### アプリケーション更新
+
 ```bash
-tail -f apps/bool_node/combined.log
+# コード取得
+git pull origin main
+
+# 依存関係更新
+npm install
+
+# ビルド
+npm run build
+
+# PM2で再起動
+pm2 restart oid4vp-verifier
 ```
 
-**メトリクス取得**（将来的な改善）:
-- Prometheus + Grafana
-- CloudWatch (AWS)
-- Datadog
+### 依存パッケージ更新
 
----
+```bash
+# セキュリティ脆弱性確認
+npm audit
+
+# 脆弱性修正
+npm audit fix
+
+# パッケージ更新
+npm update
+
+# メジャーバージョン更新（慎重に）
+npm outdated
+npm install <package>@latest
+```
 
 ## まとめ
 
-boolcheckのデプロイメントは、以下のステップで行います：
+OID4VP Verifierは単一ノード構成のため、デプロイが簡単です：
 
-1. **環境準備**: Node.js 20、依存関係インストール
-2. **ビルド**: 各ノードのビルド実行
-3. **環境設定**: `.env`ファイルの作成と設定
-4. **起動**: 各ノードの起動と動作確認
-5. **監視**: PM2によるプロセス管理とログ監視
+- **シンプルな構成**: 1つのNode.jsプロセスとSQLite
+- **スケーラビリティ**: 必要に応じて水平スケール可能
+- **メンテナンス**: PM2による自動再起動とログ管理
+- **監視**: ヘルスチェックエンドポイントによる稼働監視
 
-本番環境では、ロードバランサ、プロセスマネージャ、監視ツールを活用して、高可用性と安定運用を実現します。
+本番環境では、HTTPS、適切な証明書管理、定期的なバックアップを必ず実施してください。

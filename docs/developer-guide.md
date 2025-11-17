@@ -1,6 +1,6 @@
-# 開発者ガイド (Developer Guide)
+# OID4VP Verifier - 開発者ガイド
 
-このドキュメントは、boolcheck バックエンドシステムの開発に参加する開発者向けのガイドです。
+このドキュメントは、OID4VP Verifierシステムの開発に参加する開発者向けのガイドです。
 
 ## 目次
 
@@ -20,7 +20,7 @@
 ### 前提条件
 
 - **Node.js**: v20 以上
-- **yarn**: パッケージマネージャー
+- **npm/yarn**: パッケージマネージャー
 - **Git**: バージョン管理
 - **エディタ**: VSCode 推奨 (TypeScript サポート)
 
@@ -32,15 +32,15 @@ git clone <repository-url>
 cd OWND-Project-VP
 
 # 依存関係のインストール
-yarn
+npm install
+# または
+yarn install
 
-# TypeScript のビルド (各ノード別)
-yarn run build:bool_node
-yarn run build:api_node
-yarn run build:verifier_node
+# TypeScript のビルド
+npm run build
 
 # 開発モードで起動 (ホットリロード対応)
-yarn run dev
+npm run dev
 ```
 
 ### 環境変数の設定
@@ -48,19 +48,29 @@ yarn run dev
 開発環境では、`.env` ファイルを作成します:
 
 ```bash
-# ノードタイプの指定
-APP_TYPE=BOOL_NODE  # または API_NODE, VERIFIER_NODE
+# アプリケーション設定
 APP_PORT=3000
+NODE_ENV=local
+APP_HOST=http://localhost:3001  # フロントエンドアプリのオリジン
 
-# OrbitDB/IPFS 設定
-PEER_ADDR=/ip4/0.0.0.0/tcp/4000
-ORBITDB_ROOT_ID_KEY=main_peer
-IPFS_PATH=./ipfs/blocks
-ORBITDB_PATH=./orbitdb
-KEYSTORE_PATH=./keystore
+# OID4VP設定
+OID4VP_CLIENT_ID=http://localhost:3000
+OID4VP_CLIENT_ID_SCHEME=x509_san_dns
+OID4VP_REQUEST_HOST=oid4vp://localhost
+OID4VP_REQUEST_URI=http://localhost:3000/oid4vp/request
+OID4VP_RESPONSE_URI=http://localhost:3000/oid4vp/responses
+OID4VP_REDIRECT_URI=http://localhost:3001/callback
+OID4VP_PRESENTATION_DEFINITION_URI=http://localhost:3000/oid4vp/presentation-definition
+
+# Verifier証明書（開発環境）
+OID4VP_VERIFIER_JWK={"kty":"EC","crv":"P-256",...}
+OID4VP_VERIFIER_X5C=<PEM形式の証明書>
 
 # SQLite設定
 DATABASE_FILEPATH=./database.sqlite
+
+# Cookie Secret
+OID4VP_COOKIE_SECRET=your-secret-key-here
 
 # ログレベル
 LOG_LEVEL=debug
@@ -78,7 +88,7 @@ LOG_LEVEL=debug
   "typescript.enablePromptUseWorkspaceTsdk": true,
   "[typescript]": {
     "editor.codeActionsOnSave": {
-      "source.fixAll.eslint": true
+      "source.fixAll.eslint": "explicit"
     }
   }
 }
@@ -98,535 +108,348 @@ OWND-Project-VP/
 │   ├── types/                    # 型定義
 │   │   └── app-types.ts          # アプリケーション共通型
 │   ├── routes/                   # ルーティング層
-│   │   ├── main-routes.ts        # データベース API
-│   │   ├── admin-routes.ts       # 管理者 API
 │   │   ├── oid4vp-routes.ts      # OID4VP API
-│   │   ├── presenters.ts         # レスポンス整形
-│   │   └── types.ts              # ルート用型定義
-│   ├── usecases/                 # ビジネスロジック層
-│   │   ├── claim-interactor.ts   # クレーム処理
-│   │   ├── oid4vp-interactor.ts  # OID4VP 処理
-│   │   ├── oid4vp-repository.ts  # OID4VP データアクセス
-│   │   ├── types.ts              # ユースケース用型定義
-│   │   └── internal/             # 内部処理
-│   │       └── credential1-processor.ts  # 資格情報処理
-│   ├── orbit-db/                 # OrbitDB 層
-│   │   ├── orbitdb-service.ts    # OrbitDB サービス
-│   │   └── orbitdb-service.types.ts
-│   ├── local-data/               # ローカルデータ層
-│   │   ├── local-data-handler.ts # データハンドラー
-│   │   ├── sqlite-client.ts      # SQLite クライアント
-│   │   ├── replication.ts        # レプリケーション
-│   │   └── syncer.ts             # 同期処理
-│   ├── oid4vp/                   # OID4VP 実装
-│   │   ├── verifier.ts           # Verifier 実装
-│   │   ├── verify.ts             # VP/VC 検証
-│   │   ├── auth-request.ts       # 認証リクエスト生成
-│   │   └── response-endpoint.ts  # レスポンスエンドポイント
+│   │   ├── presenters.ts         # レスポンス変換
+│   │   ├── error-handler.ts      # エラーハンドリング
+│   │   └── types.ts              # レスポンス型定義
+│   ├── usecases/                 # ユースケース層
+│   │   ├── oid4vp-interactor.ts  # OID4VP認証フロー
+│   │   ├── oid4vp-repository.ts  # SQLiteリポジトリ
+│   │   ├── internal/             # 内部処理
+│   │   │   ├── credential1-processor.ts
+│   │   │   └── credential2-processor.ts
+│   │   └── types.ts              # ユースケース型定義
+│   ├── oid4vp/                   # OID4VP Core
+│   │   ├── verifier.ts           # Verifier実装
+│   │   ├── response-endpoint.ts  # Response Endpoint
+│   │   ├── verify.ts             # VP Token検証
+│   │   ├── auth-request.ts       # Authorization Request生成
+│   │   └── types.ts              # OID4VP型定義
+│   ├── database/                 # データベース層
+│   │   ├── schema.ts             # SQLiteスキーマ
+│   │   └── index.ts              # DB初期化
 │   ├── helpers/                  # ヘルパー関数
-│   │   ├── libp2p-helper.ts      # libp2p ユーティリティ
-│   │   └── get-peer-id.ts        # Peer ID 生成
-│   ├── services/                 # サービス層
-│   │   ├── logging-service.ts    # ログサービス
-│   │   └── ogp-service.ts        # OGP 取得サービス
-│   └── tool-box/                 # ツール群
-│       ├── verify.ts             # 検証ツール
-│       └── x509/                 # X.509 関連
-│           └── x509.ts           # 証明書処理
+│   │   └── jwt-helper.ts         # JWT処理
+│   ├── tool-box/                 # ツール群
+│   │   ├── verify.ts             # 署名検証
+│   │   ├── x509/                 # X.509証明書処理
+│   │   │   ├── x509.ts           # 証明書検証
+│   │   │   └── issue.ts          # 証明書発行
+│   │   ├── datetime.ts           # 日時処理
+│   │   └── util.ts               # 汎用ユーティリティ
+│   └── services/                 # サービス層
+│       └── logging-service.ts    # ロギング
+├── tests/                        # テスト
+│   ├── oid4vp/                   # OID4VPテスト
+│   │   ├── verifier.test.ts
+│   │   └── test-utils.ts
+│   └── ...
 ├── docs/                         # ドキュメント
 ├── dist/                         # ビルド成果物
-├── orbitdb/                      # OrbitDB データ (gitignore)
-├── ipfs/                         # IPFS データ (gitignore)
-└── package.json                  # プロジェクト設定
+├── .env                          # 環境変数
+├── package.json                  # プロジェクト設定
+├── tsconfig.json                 # TypeScript設定
+└── nodemon.json                  # Nodemon設定
 ```
 
-### レイヤーアーキテクチャ
+### レイヤー別責務
 
-システムは以下の層で構成されています:
+#### 1. Presentation Layer (`routes/`)
+- HTTPリクエスト/レスポンス処理
+- ルーティング
+- バリデーション
+- エラーハンドリング
 
-1. **Presentation Layer** (`routes/`)
-   - HTTP リクエスト/レスポンス処理
-   - バリデーション
-   - Presenter によるレスポンス整形
+#### 2. Use Case Layer (`usecases/`)
+- OID4VP認証フローの実装
+- ビジネスロジック
+- トランザクション制御
+- プレゼンテーション変換
 
-2. **Use Case Layer** (`usecases/`)
-   - ビジネスロジック
-   - トランザクション制御
-   - エラーハンドリング
+#### 3. Repository Layer (`usecases/oid4vp-repository.ts`)
+- SQLiteセッション管理
+- リクエスト・レスポンス永続化
+- 状態管理
 
-3. **Repository Layer** (`orbit-db/`, `local-data/`)
-   - データアクセス
-   - OrbitDB と SQLite の統合
-   - データ同期
-
-4. **Infrastructure Layer** (`oid4vp/`, `services/`, `helpers/`)
-   - 外部サービス連携
-   - ユーティリティ関数
-   - 技術的な詳細実装
+#### 4. Infrastructure Layer (`oid4vp/`, `database/`, `tool-box/`)
+- OID4VP Core
+- SQLiteアクセス
+- 署名検証
+- X.509証明書処理
 
 ---
 
 ## コーディング規約
 
-### TypeScript スタイルガイド
-
-#### 型定義
+### TypeScript スタイル
 
 ```typescript
-// ✅ Good: 明示的な型定義
-interface UrlDocument {
-  url: string;
-  hash: string;
-  timestamp: number;
-}
-
-// ❌ Bad: any の使用
-const data: any = fetchData();
-
-// ✅ Good: 具体的な型または unknown
-const data: UrlDocument = fetchData();
-```
-
-#### Result パターン
-
-エラーハンドリングには Result パターンを使用します:
-
-```typescript
-import { Result } from './types/app-types';
-
-// Result<成功時の型, エラー型>
-export const processUrl = async (
-  url: string
-): Promise<Result<UrlDocument, ValidationError>> => {
-  if (!isValidUrl(url)) {
-    return {
-      ok: false,
-      error: {
-        type: 'INVALID_URL',
-        message: 'Invalid URL format',
-      },
-    };
-  }
-
-  const doc = await createUrlDocument(url);
-  return {
-    ok: true,
-    payload: doc,
-  };
+// 良い例
+export const generateAuthRequest = async <T>(
+  payload: AuthRequestPayload,
+  presenter: AuthRequestPresenter<T>
+): Promise<Result<T, NotSuccessResult>> => {
+  // 実装
 };
 
-// 呼び出し側
-const result = await processUrl(url);
+// 型エイリアス
+type Result<T, E> =
+  | { ok: true; payload: T }
+  | { ok: false; error: E };
+
+// インターフェース
+interface SessionRepository {
+  putRequestId(requestId: string): Promise<void>;
+  getSession(requestId: string): Promise<Session | null>;
+}
+```
+
+### ネーミング規則
+
+- **ファイル**: kebab-case (`oid4vp-interactor.ts`)
+- **クラス/インターフェース**: PascalCase (`SessionRepository`)
+- **関数/変数**: camelCase (`generateAuthRequest`)
+- **定数**: UPPER_SNAKE_CASE (`INPUT_DESCRIPTOR_ID1`)
+- **プライベート関数**: `_`プレフィックス (`_validateRequest`)
+
+### コメント
+
+```typescript
+/**
+ * Authorization Requestを生成します
+ * @param payload リクエストペイロード
+ * @param presenter レスポンス変換関数
+ * @returns 生成されたAuthorization Request
+ */
+export const generateAuthRequest = async <T>(
+  payload: AuthRequestPayload,
+  presenter: AuthRequestPresenter<T>
+): Promise<Result<T, NotSuccessResult>> => {
+  // 1. トランザクション開始
+  const request = await responseEndpoint.initiateTransaction({
+    // ...
+  });
+
+  // 2. Presentation Definition生成
+  const pd = await verifier.generatePresentationDefinition(
+    // ...
+  );
+
+  return { ok: true, payload: presenter(authRequest, request.id) };
+};
+```
+
+### エラーハンドリング
+
+```typescript
+// Result型を使用
+const result = await someOperation();
 if (!result.ok) {
-  console.error(result.error);
-  return;
+  return { ok: false, error: result.error };
 }
-const doc = result.payload; // 型安全にアクセス
+
+// エラータイプ
+type NotSuccessResult =
+  | { type: "INVALID_PARAMETER"; message?: string }
+  | { type: "NOT_FOUND"; message?: string }
+  | { type: "EXPIRED"; message?: string };
 ```
-
-#### 非同期処理
-
-```typescript
-// ✅ Good: async/await の使用
-export const fetchData = async (): Promise<Data> => {
-  const result = await orbitdbService.query({ indexValue: 'value' });
-  return processResult(result);
-};
-
-// ❌ Bad: Promise チェーンの過度な使用
-export const fetchData = (): Promise<Data> => {
-  return orbitdbService
-    .query({ indexValue: 'value' })
-    .then(result => processResult(result));
-};
-```
-
-#### ログ出力
-
-```typescript
-import { logger } from './services/logging-service';
-
-// ログレベルの使い分け
-logger.debug('Detailed information for debugging', { context });
-logger.info('General information', { event: 'USER_REGISTERED' });
-logger.warn('Warning conditions', { issue: 'SLOW_RESPONSE' });
-logger.error('Error conditions', { error, stack: error.stack });
-```
-
-#### ファイル命名規則
-
-- **ケバブケース**: ファイル名は小文字とハイフンを使用
-  - 例: `claim-interactor.ts`, `oid4vp-routes.ts`
-
-- **型定義ファイル**: `.types.ts` サフィックス
-  - 例: `orbitdb-service.types.ts`, `app-types.ts`
-
-- **テストファイル**: `.test.ts` または `.spec.ts` サフィックス
-  - 例: `claim-interactor.test.ts`
 
 ---
 
 ## 新機能の追加方法
 
-### 新しい API エンドポイントの追加
+### 1. 新しいOID4VPエンドポイントの追加
 
-#### ステップ 1: 型定義の追加 (`src/routes/types.ts`)
-
-```typescript
-export type GetUrlsRequest = {
-  limit?: number;
-  offset?: number;
-};
-
-export type GetUrlsResponse = {
-  urls: UrlDocument[];
-  total: number;
-};
-```
-
-#### ステップ 2: Presenter の追加 (`src/routes/presenters.ts`)
+#### Step 1: ルート定義 (`routes/oid4vp-routes.ts`)
 
 ```typescript
-export const presentUrls = (urls: UrlDocument[], total: number): GetUrlsResponse => {
-  return {
-    urls: urls.map(url => ({
-      url: url.url,
-      hash: url.hash,
-      timestamp: url.timestamp,
-    })),
-    total,
-  };
-};
-```
+router.post(`/${apiDomain}/new-endpoint`, koaBody(), async (ctx) => {
+  const payload = ctx.request.body;
 
-#### ステップ 3: Use Case の実装 (`src/usecases/url-interactor.ts`)
+  const result = await interactor.newOperation(payload, newPresenter);
 
-```typescript
-import { Result } from '../types/app-types';
-
-export class UrlInteractor {
-  constructor(
-    private localDataHandler: LocalDataHandler,
-  ) {}
-
-  async getUrls(
-    limit: number = 10,
-    offset: number = 0
-  ): Promise<Result<{ urls: UrlDocument[]; total: number }, Error>> {
-    try {
-      const urls = await this.localDataHandler.getUrls(limit, offset);
-      const total = await this.localDataHandler.countUrls();
-
-      return {
-        ok: true,
-        payload: { urls, total },
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        error: error as Error,
-      };
-    }
+  if (result.ok) {
+    ctx.status = 200;
+    ctx.body = result.payload;
+  } else {
+    const { statusCode, body } = handleError(result.error);
+    ctx.status = statusCode;
+    ctx.body = body;
   }
-}
+});
 ```
 
-#### ステップ 4: ルートの追加 (`src/routes/main-routes.ts`)
+#### Step 2: Interactor実装 (`usecases/oid4vp-interactor.ts`)
 
 ```typescript
-import Router from '@koa/router';
-import { presentUrls } from './presenters';
+const newOperation = async <T>(
+  payload: any,
+  presenter: (result: any) => T
+): Promise<Result<T, NotSuccessResult>> => {
+  // 1. バリデーション
+  if (!payload.requiredField) {
+    return { ok: false, error: { type: "INVALID_PARAMETER" } };
+  }
 
-export const setupMainRoutes = (
-  router: Router,
-  urlInteractor: UrlInteractor,
-) => {
-  router.get('/api/urls', async (ctx) => {
-    const { limit, offset } = ctx.query;
+  // 2. ビジネスロジック
+  const result = await someProcessing(payload);
 
-    const result = await urlInteractor.getUrls(
-      limit ? parseInt(limit as string) : 10,
-      offset ? parseInt(offset as string) : 0,
-    );
+  // 3. Presenter変換
+  return { ok: true, payload: presenter(result) };
+};
+```
 
-    if (!result.ok) {
-      ctx.status = 500;
-      ctx.body = { error: result.error.message };
-      return;
-    }
+#### Step 3: Presenter追加 (`routes/presenters.ts`)
 
-    ctx.body = presentUrls(result.payload.urls, result.payload.total);
+```typescript
+export const newPresenter = (result: any) => ({
+  id: result.id,
+  data: result.data,
+});
+```
+
+#### Step 4: テスト作成 (`tests/oid4vp/new-endpoint.test.ts`)
+
+```typescript
+import { describe, it } from "mocha";
+import { expect } from "chai";
+import request from "supertest";
+
+describe("POST /oid4vp/new-endpoint", () => {
+  it("should return success", async () => {
+    const response = await request(app.callback())
+      .post("/oid4vp/new-endpoint")
+      .send({ requiredField: "value" });
+
+    expect(response.status).to.equal(200);
+    expect(response.body).to.have.property("id");
   });
-};
+});
 ```
 
-### 新しい OrbitDB ドキュメントタイプの追加
+### 2. 新しいSQLiteテーブルの追加
 
-#### ステップ 1: 型定義 (`src/types/app-types.ts`)
+#### Step 1: スキーマ定義 (`database/schema.ts`)
 
-```typescript
-export interface CommentDocument {
-  _id: string;
-  urlHash: string;
-  userId: string;
-  comment: string;
-  timestamp: number;
-}
-```
-
-#### ステップ 2: インデックス設定 (`src/orbit-db/orbitdb-service.ts`)
-
-```typescript
-const commentIndexes = [
-  { indexBy: 'urlHash', indexName: 'commentsByUrlHash' },
-  { indexBy: 'userId', indexName: 'commentsByUserId' },
-];
-
-await createDocuments<CommentDocument>(
-  ipfs,
-  'comments',
-  commentIndexes,
+```sql
+CREATE TABLE new_table (
+  id TEXT PRIMARY KEY,
+  field1 TEXT NOT NULL,
+  field2 INTEGER,
+  created_at INTEGER NOT NULL
 );
+
+CREATE INDEX idx_new_table_field1 ON new_table(field1);
 ```
 
-#### ステップ 3: データハンドラー追加 (`src/local-data/local-data-handler.ts`)
+#### Step 2: リポジトリ実装 (`usecases/oid4vp-repository.ts`)
 
 ```typescript
-export class LocalDataHandler {
-  async saveComment(comment: CommentDocument): Promise<void> {
-    const sql = `
-      INSERT OR REPLACE INTO comments (_id, urlHash, userId, comment, timestamp)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    await this.sqliteClient.run(sql, [
-      comment._id,
-      comment.urlHash,
-      comment.userId,
-      comment.comment,
-      comment.timestamp,
-    ]);
-  }
+export const initNewTableRepository = (db: Database): NewTableRepository => ({
+  save: async (data) => {
+    await db.run(
+      `INSERT INTO new_table (id, field1, field2, created_at)
+       VALUES (?, ?, ?, ?)`,
+      [data.id, data.field1, data.field2, Date.now()]
+    );
+  },
 
-  async getCommentsByUrl(urlHash: string): Promise<CommentDocument[]> {
-    const sql = `
-      SELECT * FROM comments
-      WHERE urlHash = ?
-      ORDER BY timestamp DESC
-    `;
-    return await this.sqliteClient.all<CommentDocument>(sql, [urlHash]);
-  }
-}
-```
-
-### OID4VP の新しい資格情報タイプの追加
-
-#### ステップ 1: Presentation Definition の作成 (`src/oid4vp/auth-request.ts`)
-
-```typescript
-const employeePresentationDefinition: PresentationDefinition = {
-  id: 'employee_verification',
-  input_descriptors: [
-    {
-      id: 'employee_credential',
-      name: 'Employee Credential',
-      purpose: 'Verify employee status',
-      constraints: {
-        fields: [
-          {
-            path: ['$.vc.type'],
-            filter: {
-              type: 'array',
-              contains: { const: 'EmployeeCredential' },
-            },
-          },
-          {
-            path: ['$.vc.credentialSubject.employeeId'],
-            purpose: 'Employee ID is required',
-          },
-          {
-            path: ['$.vc.credentialSubject.department'],
-            purpose: 'Department information is required',
-          },
-        ],
-      },
-    },
-  ],
-};
-```
-
-#### ステップ 2: Processor の実装 (`src/usecases/internal/employee-processor.ts`)
-
-```typescript
-import { Result } from '../../types/app-types';
-
-export interface EmployeeData {
-  employeeId: string;
-  department: string;
-  name: string;
-}
-
-export const processEmployeeCredential = (
-  vpToken: string
-): Result<EmployeeData, ProcessorError> => {
-  try {
-    const decoded = decodeVpToken(vpToken);
-    const credential = decoded.vp.verifiableCredential[0];
-
-    const employeeId = credential.credentialSubject.employeeId;
-    const department = credential.credentialSubject.department;
-    const name = credential.credentialSubject.name;
-
-    if (!employeeId || !department) {
-      return {
-        ok: false,
-        error: {
-          type: 'MISSING_FIELD',
-          message: 'Required employee fields are missing',
-        },
-      };
-    }
-
-    return {
-      ok: true,
-      payload: { employeeId, department, name },
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        type: 'PROCESSING_ERROR',
-        message: error.message,
-      },
-    };
-  }
-};
+  get: async (id) => {
+    return await db.get(
+      `SELECT * FROM new_table WHERE id = ?`,
+      [id]
+    );
+  },
+});
 ```
 
 ---
 
 ## テスト戦略
 
-### ユニットテストの作成
-
-```typescript
-// src/usecases/__tests__/claim-interactor.test.ts
-import { ClaimInteractor } from '../claim-interactor';
-import { LocalDataHandler } from '../../local-data/local-data-handler';
-
-describe('ClaimInteractor', () => {
-  let claimInteractor: ClaimInteractor;
-  let mockLocalDataHandler: jest.Mocked<LocalDataHandler>;
-
-  beforeEach(() => {
-    mockLocalDataHandler = {
-      getClaimsByUrl: jest.fn(),
-      saveClaim: jest.fn(),
-    } as any;
-
-    claimInteractor = new ClaimInteractor(mockLocalDataHandler);
-  });
-
-  describe('getClaimsByUrl', () => {
-    it('should return claims for a valid URL hash', async () => {
-      const mockClaims = [
-        { _id: '1', urlHash: 'hash123', claimerId: 'user1' },
-      ];
-      mockLocalDataHandler.getClaimsByUrl.mockResolvedValue(mockClaims);
-
-      const result = await claimInteractor.getClaimsByUrl('hash123');
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.payload).toEqual(mockClaims);
-      }
-    });
-
-    it('should handle errors gracefully', async () => {
-      mockLocalDataHandler.getClaimsByUrl.mockRejectedValue(
-        new Error('Database error')
-      );
-
-      const result = await claimInteractor.getClaimsByUrl('hash123');
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toBe('Database error');
-      }
-    });
-  });
-});
-```
-
-### 統合テストの作成
-
-```typescript
-// src/routes/__tests__/main-routes.integration.test.ts
-import request from 'supertest';
-import { createApp } from '../../api';
-
-describe('Main Routes Integration', () => {
-  let app: any;
-
-  beforeAll(async () => {
-    app = await createApp({
-      nodeType: 'API_NODE',
-      port: 3001,
-      dbPath: ':memory:', // インメモリDBを使用
-    });
-  });
-
-  afterAll(async () => {
-    await app.close();
-  });
-
-  describe('GET /api/claims/:urlHash', () => {
-    it('should return claims for a URL', async () => {
-      const response = await request(app.callback())
-        .get('/api/claims/test-hash')
-        .expect(200);
-
-      expect(response.body).toHaveProperty('claims');
-      expect(Array.isArray(response.body.claims)).toBe(true);
-    });
-
-    it('should return 404 for non-existent URL', async () => {
-      await request(app.callback())
-        .get('/api/claims/non-existent')
-        .expect(404);
-    });
-  });
-});
-```
-
-### テストの実行
+### テスト構成
 
 ```bash
-# すべてのテストを実行
-yarn test
+tests/
+├── oid4vp/
+│   ├── verifier.test.ts         # Verifier機能テスト
+│   ├── response-endpoint.test.ts # Response Endpointテスト
+│   └── test-utils.ts            # テストユーティリティ
+└── tool-box/
+    └── x509.test.ts             # X.509証明書処理テスト
+```
 
-# カバレッジレポート付き
-yarn test:coverage
+### テスト実行
 
-# 特定のファイルのみテスト
-yarn test claim-interactor
+```bash
+# 全テスト実行
+npm test
 
-# ウォッチモード
-yarn test:watch
+# 特定のテスト実行
+npm test -- --grep "verifier"
+
+# カバレッジ計測
+npm test -- --coverage
+```
+
+### テストの書き方
+
+```typescript
+import { describe, it, before, after } from "mocha";
+import { expect } from "chai";
+import { initVerifier } from "../../src/oid4vp/verifier.js";
+
+describe("Verifier", () => {
+  let verifier: Verifier;
+  let datastore: VerifierDatastore;
+
+  before(async () => {
+    // セットアップ
+    datastore = await setupTestDatastore();
+    verifier = initVerifier(datastore);
+  });
+
+  after(async () => {
+    // クリーンアップ
+    await cleanupTestDatastore(datastore);
+  });
+
+  describe("generatePresentationDefinition", () => {
+    it("should generate valid presentation definition", async () => {
+      const pd = await verifier.generatePresentationDefinition(
+        inputDescriptors,
+        submissionRequirements,
+        "Test purpose",
+        "Test name"
+      );
+
+      expect(pd).to.have.property("id");
+      expect(pd.input_descriptors).to.be.an("array");
+      expect(pd.submission_requirements).to.be.an("array");
+    });
+  });
+});
 ```
 
 ---
 
 ## デバッグ手法
 
-### ログレベルの調整
+### ロギング
 
-開発時は詳細なログを出力します:
+```typescript
+import getLogger from "../services/logging-service.js";
 
-```bash
-LOG_LEVEL=debug yarn run dev
+const logger = getLogger();
+
+logger.debug("Debug information", { requestId: "req-123" });
+logger.info("Info message", { userId: "user-456" });
+logger.warn("Warning message", { reason: "Invalid parameter" });
+logger.error("Error occurred", { error: err.message, stack: err.stack });
 ```
 
-### VSCode デバッガーの設定
+### VSCode デバッグ設定
 
 `.vscode/launch.json`:
 
@@ -637,488 +460,169 @@ LOG_LEVEL=debug yarn run dev
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug BOOL_NODE",
+      "name": "Debug OID4VP Verifier",
+      "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/src/index.ts",
-      "preLaunchTask": "tsc: build",
+      "preLaunchTask": "tsc: build - tsconfig.json",
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "env": {
-        "APP_TYPE": "BOOL_NODE",
-        "APP_PORT": "3000",
-        "LOG_LEVEL": "debug"
-      },
-      "sourceMaps": true,
-      "smartStep": true,
-      "skipFiles": ["<node_internals>/**"]
+        "NODE_ENV": "local"
+      }
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Mocha Tests",
+      "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+      "args": [
+        "--require", "ts-node/register",
+        "--timeout", "999999",
+        "--colors",
+        "${workspaceFolder}/tests/**/*.test.ts"
+      ],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
     }
   ]
 }
-```
-
-### OrbitDB データの確認
-
-```typescript
-// デバッグ用のスクリプト
-import { createOrbitDB } from './orbit-db/orbitdb-service';
-
-const debugOrbitDB = async () => {
-  const orbitdb = await createOrbitDB({
-    directory: './orbitdb',
-    id: 'debug',
-  });
-
-  // すべてのドキュメントを表示
-  const result = await orbitdb.query<UrlDocument>('urls', {});
-  console.log('Total documents:', result.length);
-  console.log('Documents:', JSON.stringify(result, null, 2));
-};
-
-debugOrbitDB();
-```
-
-### SQLite データの確認
-
-```bash
-# SQLite CLI で直接確認
-sqlite3 ./local-data/boolcheck.db
-
-# クエリ例
-SELECT * FROM urls LIMIT 10;
-SELECT COUNT(*) FROM claims;
-SELECT * FROM claimers WHERE _id = 'specific-id';
-```
-
-### ネットワークデバッグ
-
-libp2p の接続状況を確認:
-
-```typescript
-import { logger } from './services/logging-service';
-
-// libp2p イベントのログ出力
-libp2p.addEventListener('peer:connect', (event) => {
-  logger.debug('Peer connected', { peerId: event.detail.toString() });
-});
-
-libp2p.addEventListener('peer:disconnect', (event) => {
-  logger.debug('Peer disconnected', { peerId: event.detail.toString() });
-});
-
-// 接続中のピアの確認
-const peers = await libp2p.peerStore.all();
-console.log('Connected peers:', peers.map(p => p.id.toString()));
 ```
 
 ---
 
 ## 一般的な開発タスク
 
-### 新しいマイグレーションの作成
+### データベースリセット
 
-```typescript
-// src/local-data/migrations/003_add_comments_table.ts
-export const migration003 = async (db: Database) => {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS comments (
-      _id TEXT PRIMARY KEY,
-      urlHash TEXT NOT NULL,
-      userId TEXT NOT NULL,
-      comment TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      FOREIGN KEY (urlHash) REFERENCES urls(hash)
-    );
+```bash
+# SQLiteデータベースを削除
+rm database.sqlite
 
-    CREATE INDEX idx_comments_urlHash ON comments(urlHash);
-    CREATE INDEX idx_comments_userId ON comments(userId);
-  `);
-};
+# アプリケーション再起動で自動的に再作成される
+npm run dev
 ```
 
-### 環境変数の追加
-
-1. `src/types/app-types.ts` に型定義を追加:
+### テストデータ生成
 
 ```typescript
-export interface AppConfig {
-  nodeType: NodeType;
-  port: number;
-  // 新しい設定を追加
-  maxConnections: number;
-}
-```
+import ellipticJwk from "elliptic-jwk";
+import { issueJwtUsingX5C } from "../tests/oid4vp/test-utils.js";
 
-2. `src/api.ts` で環境変数を読み込む:
-
-```typescript
-const config: AppConfig = {
-  nodeType: process.env.APP_TYPE as NodeType,
-  port: parseInt(process.env.APP_PORT || '3000'),
-  maxConnections: parseInt(process.env.MAX_CONNECTIONS || '50'),
-};
-```
-
-### CORS 設定の変更
-
-```typescript
-// src/api.ts
-import cors from '@koa/cors';
-
-// ノードタイプごとに異なる CORS 設定
-const corsOptions = config.nodeType === 'API_NODE'
-  ? {
-      origin: '*', // API_NODE は全てのオリジンを許可
-      credentials: false,
-    }
-  : {
-      origin: (ctx) => {
-        const origin = ctx.get('Origin');
-        const allowedOrigins = ['https://example.com', 'https://app.example.com'];
-        return allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-      },
-      credentials: true,
-    };
-
-app.use(cors(corsOptions));
-```
-
-### カスタムミドルウェアの追加
-
-```typescript
-// src/middleware/request-logger.ts
-import { Context, Next } from 'koa';
-import { logger } from '../services/logging-service';
-
-export const requestLogger = async (ctx: Context, next: Next) => {
-  const start = Date.now();
-
-  await next();
-
-  const duration = Date.now() - start;
-  logger.info('Request completed', {
-    method: ctx.method,
-    url: ctx.url,
-    status: ctx.status,
-    duration: `${duration}ms`,
-  });
+// テスト用のJWT生成
+const privateJwk = ellipticJwk.newPrivateJwk("P-256");
+const subject = "/C=JP/ST=Tokyo/L=Chiyoda-ku/O=Test Company/CN=test.example.com";
+const payload = {
+  vc: {
+    type: ["VerifiableCredential", "TestCredential"],
+    credentialSubject: {
+      field1: "value1",
+      field2: "value2",
+    },
+  },
 };
 
-// src/api.ts で使用
-import { requestLogger } from './middleware/request-logger';
-app.use(requestLogger);
-```
-
-### バッチ処理の追加
-
-```typescript
-// src/jobs/claim-aggregator.ts
-import { CronJob } from 'cron';
-import { logger } from '../services/logging-service';
-
-export const startClaimAggregator = (localDataHandler: LocalDataHandler) => {
-  // 毎時実行
-  const job = new CronJob('0 * * * *', async () => {
-    logger.info('Starting claim aggregation job');
-
-    try {
-      const urls = await localDataHandler.getAllUrls();
-
-      for (const url of urls) {
-        const aggregated = await localDataHandler.getAggregatedClaims(url.hash);
-        logger.debug('Aggregated claims', { url: url.url, count: aggregated.length });
-      }
-
-      logger.info('Claim aggregation job completed');
-    } catch (error) {
-      logger.error('Claim aggregation job failed', { error });
-    }
-  });
-
-  job.start();
-  logger.info('Claim aggregator scheduled');
-};
+const jwt = await issueJwtUsingX5C(payload, subject, privateJwk);
 ```
 
 ---
 
 ## トラブルシューティング
 
-### よくある問題と解決方法
+### 問題: ビルドエラー
 
-#### 問題 1: OrbitDB が起動しない
-
-**症状**: `Error: Could not create OrbitDB instance`
-
-**原因**: IPFS ディレクトリが破損している
-
-**解決方法**:
 ```bash
-# IPFS と OrbitDB のデータを削除して再起動
-rm -rf ./ipfs ./orbitdb
-yarn run dev
+# node_modulesを削除して再インストール
+rm -rf node_modules
+npm install
+
+# TypeScriptのクリーンビルド
+rm -rf dist
+npm run build
 ```
 
-#### 問題 2: Peer に接続できない
+### 問題: データベース接続エラー
 
-**症状**: `No peers connected`
-
-**原因**: libp2p の設定または NAT の問題
-
-**解決方法**:
-```typescript
-// ANNOUNCE_ADDRESSES を確認
-// .env
-ANNOUNCE_ADDRESSES=/ip4/YOUR_PUBLIC_IP/tcp/4001
-
-// または、ローカルネットワークの場合
-ANNOUNCE_ADDRESSES=/ip4/192.168.1.100/tcp/4001
-```
-
-#### 問題 3: SQLite の同期エラー
-
-**症状**: `SQLITE_BUSY: database is locked`
-
-**原因**: 複数のプロセスが同じデータベースにアクセスしている
-
-**解決方法**:
-```typescript
-// WAL モードを有効にする
-await db.exec('PRAGMA journal_mode=WAL');
-await db.exec('PRAGMA busy_timeout=5000');
-```
-
-#### 問題 4: OID4VP 認証が失敗する
-
-**症状**: `VP Token verification failed`
-
-**デバッグ手順**:
-```typescript
-// 1. VP Token をデコードして内容を確認
-const decoded = jwt.decode(vpToken, { complete: true });
-console.log('VP Token:', JSON.stringify(decoded, null, 2));
-
-// 2. 証明書チェーンを確認
-const x5c = decoded.header.x5c;
-const verifyResult = await verifyCertificateChain(x5c);
-console.log('Certificate verification:', verifyResult);
-
-// 3. Presentation Definition とのマッチングを確認
-const matchResult = await matchInputDescriptors(
-  presentationDefinition,
-  decoded.payload
-);
-console.log('Input descriptor match:', matchResult);
-```
-
-#### 問題 5: メモリリーク
-
-**症状**: Node.js プロセスのメモリ使用量が増加し続ける
-
-**デバッグ方法**:
 ```bash
-# ヒープスナップショットを取得
-node --expose-gc --inspect dist/index.js
+# SQLiteファイルのパーミッション確認
+ls -la database.sqlite
 
-# Chrome DevTools で接続してメモリプロファイルを取得
+# 必要に応じてパーミッション変更
+chmod 644 database.sqlite
 ```
 
-**一般的な原因**:
-- イベントリスナーの未削除
-- グローバル変数への大きなオブジェクトの保持
-- クロージャによる参照の保持
+### 問題: VP Token検証失敗
 
-**解決方法**:
 ```typescript
-// イベントリスナーを適切に削除
-const handler = (event) => { /* ... */ };
-emitter.on('event', handler);
-// ...
-emitter.off('event', handler); // 必ず削除
+// デバッグログを有効にして詳細を確認
+LOG_LEVEL=debug npm run dev
 
-// WeakMap/WeakSet を使用してガベージコレクションを許可
-const cache = new WeakMap();
+// X.509証明書チェーン検証をスキップ（開発環境のみ）
+ENVIRONMENT=local npm run dev
+```
+
+### 問題: ポート競合
+
+```bash
+# 使用中のポートを確認
+lsof -i :3000
+
+# プロセスを終了
+kill -9 <PID>
 ```
 
 ---
 
-## パフォーマンス最適化
+## 参考資料
 
-### データベースクエリの最適化
+- [OID4VP Specification](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
+- [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/)
+- [SD-JWT Specification](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-selective-disclosure-jwt)
+- [Koa Documentation](https://koajs.com/)
+- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
 
-```typescript
-// ❌ Bad: N+1 クエリ
-const urls = await localDataHandler.getAllUrls();
-for (const url of urls) {
-  const claims = await localDataHandler.getClaimsByUrl(url.hash);
-  // ...
-}
+---
 
-// ✅ Good: 一括取得
-const urlsWithClaims = await localDataHandler.getUrlsWithClaims();
+## 開発フロー
+
+### 1. 機能開発
+
+```bash
+# 1. ブランチ作成
+git checkout -b feature/new-feature
+
+# 2. 実装
+# コード作成 + テスト作成
+
+# 3. ビルド確認
+npm run build
+
+# 4. テスト実行
+npm test
+
+# 5. コミット
+git add .
+git commit -m "feat: add new feature"
+
+# 6. プッシュ
+git push origin feature/new-feature
 ```
 
-### OrbitDB クエリの最適化
+### 2. バグ修正
 
-```typescript
-// ❌ Bad: すべてのドキュメントを取得してフィルタリング
-const allDocs = await orbitdb.query<ClaimDocument>('claims', {});
-const filtered = allDocs.filter(doc => doc.urlHash === targetHash);
+```bash
+# 1. ブランチ作成
+git checkout -b fix/bug-description
 
-// ✅ Good: インデックスを使用
-const filtered = await orbitdb.query<ClaimDocument>('claims', {
-  indexValue: targetHash,
-});
-```
+# 2. 問題の再現テスト作成
 
-### キャッシュの実装
+# 3. 修正実装
 
-```typescript
-// src/cache/claim-cache.ts
-import NodeCache from 'node-cache';
+# 4. テスト確認
+npm test
 
-export class ClaimCache {
-  private cache: NodeCache;
-
-  constructor(ttlSeconds: number = 300) {
-    this.cache = new NodeCache({ stdTTL: ttlSeconds });
-  }
-
-  get(key: string): ClaimDocument[] | undefined {
-    return this.cache.get(key);
-  }
-
-  set(key: string, value: ClaimDocument[]): void {
-    this.cache.set(key, value);
-  }
-
-  del(key: string): void {
-    this.cache.del(key);
-  }
-}
-
-// 使用例
-export class ClaimInteractor {
-  private cache: ClaimCache;
-
-  async getClaimsByUrl(urlHash: string): Promise<Result<ClaimDocument[], Error>> {
-    // キャッシュを確認
-    const cached = this.cache.get(urlHash);
-    if (cached) {
-      return { ok: true, payload: cached };
-    }
-
-    // データベースから取得
-    const claims = await this.localDataHandler.getClaimsByUrl(urlHash);
-
-    // キャッシュに保存
-    this.cache.set(urlHash, claims);
-
-    return { ok: true, payload: claims };
-  }
-}
+# 5. コミット
+git commit -m "fix: resolve bug description"
 ```
 
 ---
 
-## セキュリティベストプラクティス
-
-### 入力検証
-
-```typescript
-import validator from 'validator';
-
-export const validateUrl = (url: string): Result<string, ValidationError> => {
-  // URL 形式の検証
-  if (!validator.isURL(url, { protocols: ['http', 'https'] })) {
-    return {
-      ok: false,
-      error: { type: 'INVALID_FORMAT', message: 'Invalid URL format' },
-    };
-  }
-
-  // 許可されたドメインの検証 (オプション)
-  const allowedDomains = ['example.com', 'trusted-domain.com'];
-  const hostname = new URL(url).hostname;
-  if (!allowedDomains.some(domain => hostname.endsWith(domain))) {
-    return {
-      ok: false,
-      error: { type: 'FORBIDDEN_DOMAIN', message: 'Domain not allowed' },
-    };
-  }
-
-  return { ok: true, payload: url };
-};
-```
-
-### SQL インジェクション対策
-
-```typescript
-// ✅ Good: プリペアドステートメントを使用
-const sql = 'SELECT * FROM urls WHERE hash = ?';
-const result = await db.all(sql, [userInput]);
-
-// ❌ Bad: 文字列連結
-const sql = `SELECT * FROM urls WHERE hash = '${userInput}'`;
-```
-
-### XSS 対策
-
-```typescript
-import xss from 'xss';
-
-export const sanitizeComment = (comment: string): string => {
-  // HTML タグを除去
-  return xss(comment, {
-    whiteList: {}, // タグを一切許可しない
-    stripIgnoreTag: true,
-  });
-};
-```
-
-### レート制限
-
-```typescript
-import ratelimit from 'koa-ratelimit';
-import Redis from 'ioredis';
-
-const redis = new Redis();
-
-app.use(ratelimit({
-  driver: 'redis',
-  db: redis,
-  duration: 60000, // 1分
-  errorMessage: 'Too many requests',
-  id: (ctx) => ctx.ip,
-  headers: {
-    remaining: 'Rate-Limit-Remaining',
-    reset: 'Rate-Limit-Reset',
-    total: 'Rate-Limit-Total',
-  },
-  max: 100, // 1分あたり100リクエスト
-}));
-```
-
----
-
-## まとめ
-
-このガイドでは、boolcheck バックエンドシステムの開発に必要な情報を網羅しました:
-
-- **開発環境のセットアップ**: Node.js, pnpm, 環境変数の設定
-- **プロジェクト構造**: レイヤーアーキテクチャと各ディレクトリの役割
-- **コーディング規約**: TypeScript のベストプラクティスと Result パターン
-- **新機能の追加**: API エンドポイント、OrbitDB ドキュメント、OID4VP 資格情報
-- **テスト戦略**: ユニットテストと統合テストの作成方法
-- **デバッグ手法**: ログ、VSCode デバッガー、データベース確認
-- **一般的な開発タスク**: マイグレーション、ミドルウェア、バッチ処理
-- **トラブルシューティング**: よくある問題と解決方法
-- **パフォーマンス最適化**: クエリ最適化とキャッシング
-- **セキュリティ**: 入力検証、SQL インジェクション対策、XSS 対策
-
-さらに詳しい情報は、各ドキュメントを参照してください:
-
-- [システムアーキテクチャ](./architecture-detail.md)
-- [データモデル](./data-model.md)
-- [API 仕様](./api-specification.md)
-- [OID4VP 実装](./oid4vp-implementation.md)
-- [コンポーネント設計](./components.md)
-- [セキュリティ](./security.md)
-- [デプロイメント](./deployment.md)
+このガイドは、OID4VP Verifierシステムの開発をスムーズに進めるための基本的な情報を提供しています。質問や不明点がある場合は、チームメンバーに相談してください。
