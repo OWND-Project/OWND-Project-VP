@@ -26,8 +26,5 @@
   ],
   "ts-node": {
     "files": true
-  },
-  "files": [
-    "src/types/orbit-db.d.ts"
-  ]
+  }
 }
