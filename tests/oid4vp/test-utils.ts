@@ -9,7 +9,7 @@ import * as datetimeUtils from "../../src/tool-box/datetime.js";
 import { issueJwt } from "../../src/helpers/jwt-helper.js";
 
 export const generateCert = async (subject: string, privateJwk: PrivateJwk) => {
-  const keyPair = await ellipticJwkToPem(privateJwk);
+  const keyPair = await ellipticJwkToPem(privateJwk as Parameters<typeof ellipticJwkToPem>[0]);
   const extension = [
     { extname: "subjectAltName", array: [{ dns: "example.com" }] },
   ];

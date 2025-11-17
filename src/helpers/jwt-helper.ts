@@ -10,12 +10,13 @@ import {
   KeyLike,
   SignJWT,
 } from "jose";
-import { PrivateJwk, PublicJwk, publicJwkFromPrivate } from "elliptic-jwk";
+import { PrivateJwk, PublicJwk } from "elliptic-jwk";
 import {
   decodeSDJWT,
   DisclosureFrame,
   issueSDJWT,
   IssueSDJWTOptions,
+  JWK as SDJWT_JWK,
   verifySDJWT,
 } from "@meeco/sd-jwt";
 import { PublicKeySetting } from "../oid4vp/types.js";
@@ -80,8 +81,7 @@ export const issueSdJwt = async (
   };
   // Optional
   if (holderKeyPair) {
-    const holderKey = publicJwkFromPrivate(holderKeyPair);
-    opts.cnf = { jwk: holderKey };
+    opts.cnf = { jwk: holderKeyPair as unknown as SDJWT_JWK };
   }
   return await issueSDJWT(header, payload, disclosureFrame, opts);
 };
