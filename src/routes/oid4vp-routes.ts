@@ -1,16 +1,8 @@
 import Router from "koa-router";
 import { koaBody } from "koa-body";
 
-import {
-  NotSuccessResult,
-  VerifierNodeAppContext,
-} from "../types/app-types.js";
-import {
-  CommitData,
-  initOID4VPInteractor,
-  KeyValueType,
-} from "../usecases/oid4vp-interactor.js";
-import claimInteractor from "../usecases/claim-interactor.js";
+import { NotSuccessResult, AppContext } from "../types/app-types.js";
+import { initOID4VPInteractor } from "../usecases/oid4vp-interactor.js";
 import {
   authRequestPresenter,
   authResponsePresenter,
@@ -46,22 +38,19 @@ type Ret = {
   transactionId?: string;
 };
 
-export const routes = async (appContext: VerifierNodeAppContext) => {
+export const routes = async (appContext: AppContext) => {
   const router = new Router();
 
-  const { openedKeyValues } = appContext;
+  const { db } = appContext;
 
-  const stateKeyValue = openedKeyValues.keyValues[KeyValueType.states.name];
-  const stateRepository = initPostStateRepository(stateKeyValue);
+  // SQLiteベースのリポジトリ初期化
+  const stateRepository = initPostStateRepository(db);
+  const sessionRepository = initSessionRepository(db);
 
-  const sessionKeyValue = openedKeyValues.keyValues[KeyValueType.sessions.name];
-  const sessionRepository = initSessionRepository(sessionKeyValue);
-
-  const verifierDatastore = initVerifierDatastore(openedKeyValues);
+  const verifierDatastore = initVerifierDatastore(db);
   const verifier = initVerifier(verifierDatastore);
 
-  const responseEndpointDatastore =
-    initResponseEndpointDatastore(openedKeyValues);
+  const responseEndpointDatastore = initResponseEndpointDatastore(db);
   const responseEndpoint = initResponseEndpoint(responseEndpointDatastore);
 
   const interactor = initOID4VPInteractor(
@@ -82,22 +71,11 @@ export const routes = async (appContext: VerifierNodeAppContext) => {
       return;
     }
     const payload = ctx.request.body;
-    const { type } = payload;
-    let result: Result<Ret, NotSuccessResult>;
-    let requestHost: string;
-    if (!type || type === "post_comment") {
-      requestHost = process.env.OID4VP_REQUEST_HOST || "INVALID_REQUEST_HOST";
-      result = await interactor.generateAuthRequest<Ret>(
-        payload,
-        authRequestPresenter,
-      );
-    } else {
-      requestHost = process.env.SIOP_V2_REQUEST_HOST || "INVALID_REQUEST_HOST";
-      result = await interactor.generateAuthRequest4Delete<Ret>(
-        payload,
-        authRequestPresenter,
-      );
-    }
+    const requestHost = process.env.OID4VP_REQUEST_HOST || "INVALID_REQUEST_HOST";
+    const result = await interactor.generateAuthRequest<Ret>(
+      payload,
+      authRequestPresenter,
+    );
     if (result.ok) {
       const { authRequest, requestId, transactionId } = result.payload;
       ctx.status = 200;
@@ -114,39 +92,29 @@ export const routes = async (appContext: VerifierNodeAppContext) => {
   });
   router.get(`/${apiDomain}/request`, koaBody(), async (ctx) => {
     const query = ctx.query;
-    const type = query.type;
     const id = query.id;
+    const pdId = query.presentationDefinitionId;
+
     if (!id || typeof id !== "string") {
       ctx.status = 400;
       ctx.body = toErrorBody("BAD_REQUEST");
+      return;
+    }
+
+    if (!pdId || typeof pdId !== "string") {
+      ctx.status = 400;
+      ctx.body = toErrorBody("BAD_REQUEST");
+      return;
+    }
+
+    const result = await interactor.getRequestObject(id, pdId);
+    if (result.ok) {
+      ctx.status = 200;
+      ctx.body = result.payload;
     } else {
-      if (type === "post_comment") {
-        const pdId = query.presentationDefinitionId;
-        if (!pdId || typeof pdId !== "string") {
-          ctx.status = 400;
-          ctx.body = toErrorBody("BAD_REQUEST");
-        } else {
-          const result = await interactor.getRequestObject(id, pdId);
-          if (result.ok) {
-            ctx.status = 200;
-            ctx.body = result.payload;
-          } else {
-            const { statusCode, body } = handleError(result.error);
-            ctx.status = statusCode;
-            ctx.body = body;
-          }
-        }
-      } else {
-        const result = await interactor.getRequestObject4Delete(id);
-        if (result.ok) {
-          ctx.status = 200;
-          ctx.body = result.payload;
-        } else {
-          const { statusCode, body } = handleError(result.error);
-          ctx.status = statusCode;
-          ctx.body = body;
-        }
-      }
+      const { statusCode, body } = handleError(result.error);
+      ctx.status = statusCode;
+      ctx.body = body;
     }
   });
   router.get(
@@ -205,12 +173,11 @@ export const routes = async (appContext: VerifierNodeAppContext) => {
     koaBody(),
     async (ctx) => {
       const query = ctx.query;
-      const type =
-        typeof query.type === "string" ? String(query.type) : undefined;
       const responseCode =
         typeof query.response_code === "string"
           ? String(query.response_code)
           : undefined;
+
       if (!responseCode) {
         const { statusCode, body } = handleError({
           type: "INVALID_PARAMETER",
@@ -218,41 +185,30 @@ export const routes = async (appContext: VerifierNodeAppContext) => {
         });
         ctx.status = statusCode;
         ctx.body = body;
-      } else {
-        const transactionId = ctx.session!.transactionId;
-        if (!type || type === "post_comment") {
-          const result = await interactor.exchangeAuthResponse(
-            responseCode,
-            transactionId,
-            exchangeResponseCodePresenter,
-          );
-          if (result.ok) {
-            const { requestId, claim } = result.payload;
-            ctx.status = 200;
-            ctx.body = claim;
-            ctx.session!.request_id = requestId;
-          } else {
-            const { statusCode, body } = handleError(result.error);
-            ctx.status = statusCode;
-            ctx.body = body;
-          }
-        } else {
-          const result = await interactor.exchangeAuthResponse4Delete(
-            responseCode,
-            transactionId,
-          );
-          if (result.ok) {
-            ctx.status = 204;
-          } else {
-            const { statusCode, body } = handleError(result.error);
-            ctx.status = statusCode;
-            ctx.body = body;
-          }
-        }
-        logger.info(
-          `response-code/exchange response : code=${ctx.status} body=${JSON.stringify(ctx.body)}`,
-        );
+        return;
       }
+
+      const transactionId = ctx.session!.transactionId;
+      const result = await interactor.exchangeAuthResponse(
+        responseCode,
+        transactionId,
+        exchangeResponseCodePresenter,
+      );
+
+      if (result.ok) {
+        const { requestId, claim } = result.payload;
+        ctx.status = 200;
+        ctx.body = claim;
+        ctx.session!.request_id = requestId;
+      } else {
+        const { statusCode, body } = handleError(result.error);
+        ctx.status = statusCode;
+        ctx.body = body;
+      }
+
+      logger.info(
+        `response-code/exchange response : code=${ctx.status} body=${JSON.stringify(ctx.body)}`,
+      );
     },
   );
   router.post(`/${apiDomain}/comment/confirm`, koaBody(), async (ctx) => {

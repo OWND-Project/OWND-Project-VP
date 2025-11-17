@@ -1,18 +1,8 @@
-import { Docs, KeyValues, Node } from "../orbit-db/index.js";
+import { Database } from "sqlite";
 
-export type BoolNodeType = "BOOL_NODE" | "API_NODE";
-export type AppType = BoolNodeType | "VERIFIER_NODE";
-export interface BoolNodeAppContext {
-  type: "BOOL_NODE" | "API_NODE";
-  node: Node;
-  docs: Docs;
+export interface AppContext {
+  db: Database;
 }
-export interface VerifierNodeAppContext {
-  type: "VERIFIER_NODE";
-  node: Node;
-  openedKeyValues: KeyValues;
-}
-export type AppContext = BoolNodeAppContext | VerifierNodeAppContext;
 
 export interface Message {
   message?: string;

@@ -14,16 +14,13 @@ import {
   CommitDataPresenter,
   ExchangeResponseCodePresenter,
   PostStatePresenter,
-  UrlDocument,
   WaitCommitData,
 } from "./types.js";
 import {
-  initPostStateRepository,
   initSessionRepository,
   PostStateRepository,
   SessionRepository,
 } from "./oid4vp-repository.js";
-import siopv2 from "../oid4vp/siop-v2.js";
 import {
   INPUT_DESCRIPTOR_AFFILIATION,
   INPUT_DESCRIPTOR_ID1,
@@ -33,38 +30,15 @@ import {
   submissionRequirementClaim,
 } from "./internal/input-descriptor.js";
 import {
-  checkStateForDelete,
   handleEndpointError,
-  handleIdTokenError,
   handleRequestError,
 } from "./internal/error-handlers.js";
 import { processCredential1 } from "./internal/credential1-processor.js";
 import { processCredential2 } from "./internal/credential2-processor.js";
 import { NotSuccessResult } from "../types/app-types.js";
-import {
-  callDelete,
-  callGetUrl,
-  callGetUrlMetadata,
-  callPostUrl,
-} from "./internal/api-node-caller.js";
 import { certificateStr2Array } from "../tool-box/x509/x509.js";
 
 const logger = getLogger();
-
-export const KeyValueType = {
-  requestsAtResponseEndpoint: { name: "requests@response_endpoint" },
-  responsesAtResponseEndpoint: { name: "responses@response_endpoint" },
-  requestsAtVerifier: { name: "requests@verifier" },
-  presentationDefinitions: {
-    name: "presentation_definitions",
-  },
-  sessions: {
-    name: "sessions",
-  },
-  states: {
-    name: "states",
-  },
-};
 
 export type OID4VPInteractor = ReturnType<typeof initOID4VPInteractor>;
 
@@ -187,62 +161,6 @@ export const initOID4VPInteractor = (
     };
   };
 
-  const generateAuthRequest4Delete = async <T>(
-    payload: {
-      id: string;
-    },
-    presenter: AuthRequestPresenter<T>,
-  ): Promise<Result<T, NotSuccessResult>> => {
-    logger.info("generateAuthRequest start");
-    const { id } = payload;
-    if (!id) {
-      return { ok: false, error: { type: "INVALID_PARAMETER" } };
-    }
-
-    // initiate transaction
-    const request = await responseEndpoint.initiateTransaction({
-      responseType: "id_token",
-      redirectUriReturnedByResponseUri:
-        Env().redirectUriReturnedByResponseUri + "?type=delete_comment",
-      expiredIn: Env().expiredIn.requestAtResponseEndpoint,
-    });
-    const clientId = Env().clientId;
-    const clientIdScheme = Env().clientIdScheme;
-    const f = async () => {
-      if (clientIdScheme === "x509_san_dns") {
-        const requestUri = `${Env().requestUri}?type=delete_comment&id=${request.id}`;
-        return { clientId, requestUri };
-      } else {
-        const responseType = "id_token";
-        const opts: GenerateRequestObjectOptions = {
-          responseType,
-          responseMode: "direct_post",
-          clientIdScheme,
-          responseUri,
-          clientMetadata: getClientMetadata(),
-        };
-
-        // start vp request
-        const startRequestOpts: Record<string, any> = {
-          requestObject: opts,
-          expiredIn: Env().expiredIn.requestAtVerifier,
-        };
-        return await verifier.startRequest(request, clientId, startRequestOpts);
-      }
-    };
-    const vpRequest = await f();
-
-    await stateRepository.putState(request.id, "started", {
-      targetId: id,
-      expiredIn: Env().expiredIn.postState,
-    });
-    logger.info("generateAuthRequest end");
-    return {
-      ok: true,
-      payload: presenter(vpRequest, request.id, request.transactionId),
-    };
-  };
-
   const getRequestObject = async (
     requestId: string,
     presentationDefinitionId: string,
@@ -265,43 +183,6 @@ export const initOID4VPInteractor = (
       responseUri: responseUri,
       clientMetadata: getClientMetadata(),
       presentationDefinition,
-    };
-
-    // start vp request
-    const startRequestOpts: Record<string, any> = {
-      requestObject: opts,
-      expiredIn: Env().expiredIn.requestAtVerifier,
-    };
-    startRequestOpts.issuerJwk = JSON.parse(Env().verifier.jwk);
-    startRequestOpts.x5c = Env().verifier.x5c;
-    const vpRequest = await verifier.startRequest(
-      request,
-      clientId,
-      startRequestOpts,
-    );
-    return {
-      ok: true,
-      payload: vpRequest.request!,
-    };
-  };
-
-  const getRequestObject4Delete = async (
-    requestId: string,
-  ): Promise<Result<string, NotSuccessResult>> => {
-    const request = await responseEndpoint.getRequest(requestId);
-
-    if (!request) {
-      return { ok: false, error: { type: "INVALID_PARAMETER" } };
-    }
-
-    const responseType = "id_token";
-    const clientIdScheme = Env().clientIdScheme;
-    const opts: GenerateRequestObjectOptions = {
-      responseType,
-      responseMode: "direct_post",
-      clientIdScheme,
-      responseUri: responseUri,
-      clientMetadata: getClientMetadata(),
     };
 
     // start vp request
@@ -407,16 +288,8 @@ export const initOID4VPInteractor = (
     }
     const { nonce } = getRequest.payload;
 
-    // id token
+    // id token (SIOPv2 validation removed - use standard OID4VP validation)
     const { idToken } = payload;
-    const getIdToken = await siopv2.getIdToken(idToken, nonce);
-    if (!getIdToken.ok) {
-      await updateState2InvalidSubmission(requestId);
-      return {
-        ok: false,
-        error: handleIdTokenError(getIdToken.error),
-      };
-    }
 
     logger.info("processCredential1 start");
     // credential 1
@@ -458,26 +331,11 @@ export const initOID4VPInteractor = (
       };
     }
 
-    // save data to session
-    const { url } = cred1.payload.decoded.vc.credentialSubject;
-    const urlResources = await callGetUrl(Env().apiHost, url);
-    let urlResource: UrlDocument | undefined = undefined;
-    if (urlResources.length === 0) {
-      const ret = await callPostUrl(Env().mainNodeHost, url);
-      if (ret.code === 200) {
-        urlResource = ret.urlDoc;
-      } else if (ret.code === 409) {
-        urlResource = await callGetUrlMetadata(Env().apiHost, ret.id);
-      } else {
-        return { ok: false, error: { type: "UNEXPECTED_ERROR" } };
-      }
-    } else {
-      urlResource = urlResources[0];
-    }
-
+    // Extract credential data
     const comment = cred1.payload.raw;
     const { affiliation, icon } = cred2.payload;
 
+    // Save session data
     await sessionRepository.putWaitCommitData(
       requestId,
       idToken!,
@@ -486,121 +344,19 @@ export const initOID4VPInteractor = (
       { expiredIn: Env().expiredIn.postSession },
     );
 
-    // update post state
+    // Update post state
     await stateRepository.putState(requestId, "consumed");
 
     logger.info("consumeAuthResponse end");
     return {
       ok: true,
-      payload: presenter(requestId, comment, urlResource, {
-        sub: getIdToken.payload.idToken.sub,
+      payload: presenter(requestId, comment, undefined, {
+        sub: "", // ID token validation removed
         id_token: idToken!,
         icon,
         organization: affiliation,
       }),
     };
-  };
-
-  /**
-   *
-   * @param responseCode
-   * @param transactionId
-   */
-  const exchangeAuthResponse4Delete = async (
-    responseCode: string,
-    transactionId: string | undefined,
-  ): Promise<VoidResult<NotSuccessResult>> => {
-    logger.info("consumeAuthResponse start");
-
-    // exchange response code for auth response
-    const exchange = await responseEndpoint.exchangeResponseCodeForAuthResponse(
-      responseCode,
-      transactionId,
-    );
-    if (!exchange.ok) {
-      return { ok: false, error: handleEndpointError(exchange.error) };
-    }
-    const { requestId, payload } = exchange.payload;
-
-    const updateState2InvalidSubmission = async () => {
-      await stateRepository.putState(requestId, "invalid_submission", {
-        expiredIn: Env().expiredIn.postState,
-      });
-    };
-
-    // vp request
-    const getRequest = await verifier.getRequest(requestId);
-    if (!getRequest.ok) {
-      const { type } = getRequest.error;
-      if (type !== "CONSUMED" && type !== "EXPIRED") {
-        await updateState2InvalidSubmission();
-      }
-      return {
-        ok: false,
-        error: handleRequestError(requestId, getRequest.error),
-      };
-    }
-    const { nonce } = getRequest.payload;
-
-    // get and check state
-    const state = await stateRepository.getState(requestId);
-    const checkedState = checkStateForDelete(state);
-    if (!checkedState.ok) {
-      if (checkedState.error.type !== "CONFLICT") {
-        await updateState2InvalidSubmission();
-      }
-      return { ok: false, error: checkedState.error };
-    }
-
-    // id token
-    const { idToken } = payload;
-    const getIdToken = await siopv2.getIdToken(idToken, nonce);
-    if (!getIdToken.ok) {
-      await updateState2InvalidSubmission();
-      return {
-        ok: false,
-        error: handleIdTokenError(getIdToken.error),
-      };
-    }
-
-    // call delete
-    const statusCode = await callDelete(
-      Env().mainNodeHost,
-      idToken!,
-      checkedState.payload.id,
-    );
-    let error: NotSuccessResult | null = null;
-    if (!statusCode) {
-      return { ok: false, error: { type: "UNEXPECTED_ERROR" } };
-    } else if (statusCode === 204) {
-      // consume request
-      const consumeRequest = await verifier.consumeRequest(requestId);
-      if (!consumeRequest.ok) {
-        error = handleRequestError(requestId, consumeRequest.error);
-      }
-      // update state
-      await stateRepository.putState(requestId, "committed", {
-        expiredIn: Env().expiredIn.postState,
-      });
-    } else if (400 <= statusCode && statusCode < 500) {
-      // update state
-      await updateState2InvalidSubmission();
-      error = { type: "INVALID_PARAMETER", message: "failed delete call." };
-      // consume request
-      const consumeRequest = await verifier.consumeRequest(requestId);
-      if (!consumeRequest.ok) {
-        error = handleRequestError(requestId, consumeRequest.error);
-      }
-    } else {
-      logger.error("unexpected status code", statusCode);
-      error = { type: "UNEXPECTED_ERROR", message: "failed delete call." };
-    }
-    logger.info("consumeAuthResponse end");
-    if (error) {
-      return { ok: false, error };
-    } else {
-      return { ok: true };
-    }
   };
 
   /**
@@ -699,13 +455,10 @@ export const initOID4VPInteractor = (
 
   return {
     generateAuthRequest,
-    generateAuthRequest4Delete,
     getRequestObject,
-    getRequestObject4Delete,
     getPresentationDefinition,
     receiveAuthResponse,
     exchangeAuthResponse,
-    exchangeAuthResponse4Delete,
     confirmComment,
     cancelComment,
     getStates,
