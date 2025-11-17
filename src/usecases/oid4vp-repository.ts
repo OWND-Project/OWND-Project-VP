@@ -38,16 +38,15 @@ export const initResponseEndpointDatastore = (
     saveRequest: async (request: VpRequest) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, presentation_definition, nonce, client_id, response_uri, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           request.id,
-          JSON.stringify(request.presentationDefinition),
-          request.nonce,
-          request.clientId,
-          request.responseUri,
-          getCurrentUnixTimeInSeconds(),
-          getCurrentUnixTimeInSeconds() + 600, // デフォルト10分
+          request.responseType,
+          request.redirectUriReturnedByResponseUri || null,
+          request.transactionId || null,
+          request.issuedAt,
+          request.issuedAt + request.expiredIn,
         ]
       );
     },
@@ -56,27 +55,28 @@ export const initResponseEndpointDatastore = (
         "SELECT * FROM requests WHERE id = ?",
         [requestId]
       );
-      if (!row) return undefined;
+      if (!row) return null;
 
       return {
         id: row.id,
-        presentationDefinition: JSON.parse(row.presentation_definition),
-        nonce: row.nonce,
-        clientId: row.client_id,
-        responseUri: row.response_uri,
+        responseType: row.response_type,
+        redirectUriReturnedByResponseUri: row.redirect_uri_returned_by_response_uri,
+        transactionId: row.transaction_id,
+        issuedAt: row.created_at,
+        expiredIn: row.expires_at - row.created_at,
       } as VpRequest;
     },
     saveResponse: async (response: AuthResponse) => {
       await db.run(
         `INSERT OR REPLACE INTO response_codes
-         (code, request_id, vp_token, created_at, expires_at, used)
+         (code, request_id, payload, created_at, expires_at, used)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
           response.id,
           response.requestId,
-          response.vpToken,
-          getCurrentUnixTimeInSeconds(),
-          getCurrentUnixTimeInSeconds() + 600,
+          JSON.stringify(response.payload),
+          response.issuedAt,
+          response.issuedAt + response.expiredIn,
           0,
         ]
       );
@@ -86,7 +86,7 @@ export const initResponseEndpointDatastore = (
         "SELECT * FROM response_codes WHERE code = ? AND used = 0",
         [responseCode]
       );
-      if (!row) return undefined;
+      if (!row) return null;
 
       // 使用済みフラグを立てる
       await db.run(
@@ -97,7 +97,9 @@ export const initResponseEndpointDatastore = (
       return {
         id: row.code,
         requestId: row.request_id,
-        vpToken: row.vp_token,
+        payload: JSON.parse(row.payload),
+        issuedAt: row.created_at,
+        expiredIn: row.expires_at - row.created_at,
       } as AuthResponse;
     },
   };
@@ -113,16 +115,16 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
     saveRequest: async (request: VpRequestAtVerifier) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, presentation_definition, nonce, client_id, response_uri, created_at, expires_at)
+         (id, nonce, session, transaction_id, created_at, expires_at, consumed_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
-          JSON.stringify(request.presentationDefinition),
-          request.nonce || "",
-          request.clientId || "",
-          request.responseUri || "",
-          getCurrentUnixTimeInSeconds(),
-          getCurrentUnixTimeInSeconds() + 600,
+          request.nonce,
+          request.session || null,
+          request.transactionId || null,
+          request.issuedAt,
+          request.issuedAt + request.expiredIn,
+          request.consumedAt,
         ]
       );
     },
@@ -131,14 +133,16 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
         "SELECT * FROM requests WHERE id = ?",
         [requestId]
       );
-      if (!row) return undefined;
+      if (!row) return null;
 
       return {
         id: row.id,
-        presentationDefinition: JSON.parse(row.presentation_definition),
         nonce: row.nonce,
-        clientId: row.client_id,
-        responseUri: row.response_uri,
+        session: row.session,
+        transactionId: row.transaction_id,
+        issuedAt: row.created_at,
+        expiredIn: row.expires_at - row.created_at,
+        consumedAt: row.consumed_at,
       } as VpRequestAtVerifier;
     },
     savePresentationDefinition: async (
@@ -160,7 +164,7 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
         "SELECT * FROM presentation_definitions WHERE id = ?",
         [presentationDefinitionId]
       );
-      if (!row) return undefined;
+      if (!row) return null;
 
       return JSON.parse(row.definition) as PresentationDefinition;
     },

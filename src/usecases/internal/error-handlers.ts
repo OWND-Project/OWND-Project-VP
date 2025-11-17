@@ -6,9 +6,6 @@ import {
   PresentationError,
 } from "../../oid4vp/verifier.js";
 import { NotSuccessResult } from "../../types/app-types.js";
-import { PostState } from "../types.js";
-import { Result } from "../../tool-box/index.js";
-import { IdTokenError } from "../../oid4vp/siop-v2.js";
 
 export const handleRequestError = (
   requestId: string,
@@ -26,45 +23,6 @@ export const handleRequestError = (
     return { type: "CONFLICT" };
   } else {
     return { type: "UNEXPECTED_ERROR", cause: error.cause };
-  }
-};
-
-export const checkStateForDelete = (
-  state: PostState | null,
-): Result<{ id: string }, NotSuccessResult> => {
-  if (!state) {
-    return { ok: false, error: { type: "INVALID_PARAMETER" } };
-  } else if (state.value === "expired") {
-    return { ok: false, error: { type: "EXPIRED" } };
-  } else if (state.value === "committed") {
-    return { ok: false, error: { type: "CONFLICT" } };
-  } else if (state.value !== "started") {
-    return { ok: false, error: { type: "INVALID_PARAMETER" } };
-  }
-  if (!state.targetId) {
-    return { ok: false, error: { type: "UNEXPECTED_ERROR" } };
-  }
-  return { ok: true, payload: { id: state.targetId } };
-};
-
-export const handleIdTokenError = (error: IdTokenError): NotSuccessResult => {
-  const { type } = error;
-  console.error(type);
-  if (type === "NOT_FOUND") {
-    console.log(`${error.subject} is not found`);
-    return {
-      type: "NOT_FOUND",
-      message: "id_token is not found.",
-    };
-  } else if (type === "EXPIRED") {
-    return { type: "EXPIRED", message: "id_token is expired." };
-  } else if (type === "VALIDATE_FAILURE") {
-    return {
-      type: "INVALID_PARAMETER",
-      message: "id_token can not be validated.",
-    };
-  } else {
-    return error;
   }
 };
 

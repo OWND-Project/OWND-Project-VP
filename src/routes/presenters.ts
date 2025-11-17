@@ -1,101 +1,11 @@
 import querystring from "querystring";
 
 import {
-  AggregateResult,
-  ClaimDocument,
-  ClaimerDocument,
   ExchangeResponseCodePresenter,
   PostStatePresenter,
   PostStateValue,
-  UrlDocument,
 } from "../usecases/types.js";
-import { ClaimerResource, ClaimResource, UrlResource } from "./types.js";
 import { AuthorizationRequest } from "../oid4vp/verifier.js";
-import { AggregatedUrl } from "../local-data/local-data-handler.js";
-
-export const urlPresenter = (url: AggregatedUrl) => {
-  const urlResource: UrlResource = {
-    id: url.id,
-    url: url.url,
-    domain: url.domain,
-    title: url.title,
-    content_type: url.content_type,
-    description: url.description,
-    image: url.image ? JSON.parse(url.image) : undefined,
-    created_at: url.oldest_created_at,
-    true_count: url.true_count,
-    false_count: url.false_count,
-    else_count: url.else_count,
-    verified_true_count: url.verified_true_count,
-    verified_false_count: url.verified_false_count,
-    verified_else_count: url.verified_else_count,
-  };
-  return urlResource;
-};
-
-export const urlMetadataPresenter = (url: UrlDocument) => {
-  return {
-    id: url.id,
-    url: url.url,
-    domain: url.domain,
-    title: url.title,
-    content_type: url.content_type,
-    description: url.description,
-    image: url.image ? JSON.parse(url.image) : undefined,
-    created_at: url.created_at,
-  };
-};
-
-export const newClaimPresenter = (claim: ClaimDocument) => {
-  return { id: claim.id, status: "Created" };
-};
-export const claimPresenter = (
-  claim: ClaimDocument,
-  url: AggregatedUrl,
-  claimer: ClaimerDocument,
-  organization?: string,
-) => {
-  const claimResource: ClaimResource = {
-    id: claim.id,
-    url: {
-      id: url.id,
-      url: url.url,
-      domain: url.domain,
-      title: url.title,
-      content_type: url.content_type,
-      description: url.description,
-      image: url.image ? JSON.parse(url.image) : undefined,
-      created_at: url.created_at,
-      true_count: url.true_count,
-      false_count: url.false_count,
-      else_count: url.else_count,
-    },
-    claimer: {
-      id: claimer.id,
-      id_token: claimer.id_token,
-      icon: claimer.icon,
-      organization,
-      created_at: claim.created_at,
-    },
-    comment: claim.comment,
-    created_at: claim.created_at,
-  };
-  return claimResource;
-};
-
-export const claimerPresenter = (
-  claimer: ClaimerDocument,
-  organization?: string,
-) => {
-  const claimerResource: ClaimerResource = {
-    id: claimer.id,
-    id_token: claimer.id_token,
-    icon: claimer.icon,
-    organization: organization,
-    created_at: claimer.created_at,
-  };
-  return claimerResource;
-};
 
 export const authRequestPresenter = (
   authRequest: AuthorizationRequest,
