@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: BoolCheck API
+  description: |
+    The BoolCheck API provides data regarding the truthfulness and verification status of URLs. 
+    It allows users to query the service to get information about the authenticity and reliability 
+    of specific URLs, including counts of true, false, and other evaluations, along with related claims.
+  version: 1.0.0
+servers:
+  - url: 'https://api.boolcheck.com'
+    description: Main production server for BoolCheck API
+  - url: 'https://api.develop.boolcheck.com'
+    description: Main development server for BoolCheck API
+paths:
+  /database/urls:
+    get:
+      summary: Retrieve a list of URLs
+      description: Returns an array of URL objects.
+      parameters:
+        - in: query
+          name: filter
+          schema:
+            type: string
+          description: Filter string to search URLs
+        - in: query
+          name: start_date
+          schema:
+            type: string
+          description: Filter string after start_date (iso format)
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [ created_at, -created_at, -true_count, -false_count ]
+          description: Sort results by specified field. Prefix with `-` for descending order (e.g., `created_at`, `-created_at`, `id`, `-id`)
+      responses:
+        '200':
+          description: A JSON array of URL objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components.yaml#/components/schemas/Url'
+  /database/urls/{id}:
+    get:
+      summary: Retrieve a single URL by ID
+      description: Returns a single URL object identified by the specified ID.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The unique identifier of the URL to retrieve.
+      responses:
+        '200':
+          description: A URL object
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/Url'
+        '404':
+          description: URL not found
+  /database/urls/{id}/metadata:
+    get:
+      summary: Retrieve metadata of URL
+      description: Returns URL metadata object
+      responses:
+        '200':
+          description: URL metadata object
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/UrlMetadata'
+  /database/urls/{uuid}/claims:
+    get:
+      summary: Retrieve claims for a specific URL
+      description: Returns an array of claims associated with the URL identified by the provided UUID.
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The unique identifier (UUID) of the URL for which claims are being retrieved.
+      responses:
+        '200':
+          description: An array of claims associated with the specified URL
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components.yaml#/components/schemas/Claim'
+        '404':
+          description: URL or Claims not found
+  /database/claimers/{id}:
+    get:
+      summary: Retrieve a single Claimer by ID
+      description: Returns a single Claimer object identified by the Claimer ID.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The ID of the Claimer to retrieve.
+      responses:
+        '200':
+          description: A Claimer object
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/Claimer'
+        '404':
+          description: Claimer not found
+  /database/claimers/{id}/claims:
+    get:
+      summary: Retrieve claims under a specific Claimer by ID
+      description: Returns a list of claims associated with a specific Claimer identified by the ID.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: The ID of the Claimer.
+      responses:
+        '200':
+          description: A list of claims associated with the Claimer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components.yaml#/components/schemas/Claim'
+        '404':
+          description: Claimer or claims not found
+  /database/claims/{id}:
+    get:
+      summary: Retrieve a specific Claim by ID
+      description: Returns a specific Claim identified by the provided ID.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The unique identifier of the Claim to retrieve.
+      responses:
+        '200':
+          description: A Claim object
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/Claim'
+        '404':
+          description: Claim not found

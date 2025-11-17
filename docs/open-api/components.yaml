@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: BoolCheck API Components
+  description: |
+    The BoolCheck API provides data regarding the truthfulness and verification status of URLs. 
+    It allows users to query the service to get information about the authenticity and reliability 
+    of specific URLs, including counts of true, false, and other evaluations, along with related claims.
+  version: 1.0.0
+components:
+  schemas:
+    Url:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the URL
+        url:
+          type: string
+          format: uri
+          description: The URL string
+        domain:
+          type: string
+          description: The domain of the URL
+        title:
+          type: string
+          description: The title of the content at the URL
+        content_type:
+          type: string
+          description: The content type of the URL (e.g., `text/html; charset=UTF-8`)
+        description:
+          type: string
+          description: The description of the URL
+        image:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+          description: The image of the URL
+        created_at:
+          type: string
+          format: date-time
+          description: The timestamp when the URL was created
+        true_count:
+          type: integer
+          example: 1
+          description: Count of true votes or evaluations
+        false_count:
+          type: integer
+          example: 1
+          description: Count of false votes or evaluations
+        else_count:
+          type: integer
+          example: 0
+          description: Count of other (neither true nor false) votes or evaluations
+        verified_true_count:
+          type: integer
+          example: 1
+          description: Count of verified true votes or evaluations
+        verified_false_count:
+          type: integer
+          example: 1
+          description: Count of verified false votes or evaluations
+        verified_else_count:
+          type: integer
+          example: 0
+          description: Count of verified other (neither true nor false) votes or evaluations
+      required:
+        - id
+        - url
+        - created_at
+
+    Claim:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the Claim
+        url:
+          $ref: '#/components/schemas/Url'
+        claimer:
+          $ref: '#/components/schemas/Claimer'
+        comment:
+          type: string
+          description: claim verifiable credential string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+      required:
+        - id
+        - url
+        - claimer
+        - comment
+
+    Claimer:
+      type: object
+      properties:
+        id_token:
+          type: string
+          description: id_token jwt string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+        icon:
+          type: string
+          description: Base64 encoded icon image
+        organization:
+          type: string
+          description: affiliation verifiable credential string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+      required:
+        - icon
+        - organization
+    UrlMetadata:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        content_type:
+          type: string
+        image:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+          description: The image of the URL
+    Image:
+      type: object
+      properties:
+        height:
+          type: integer
+          nullable: true
+          description: The height of the image, can be null if not specified
+        width:
+          type: integer
+          nullable: true
+          description: The width of the image, can be null if not specified
+        type:
+          type: string
+          description: The image file type (e.g., 'gif', 'jpg', etc.)
+          example: 'gif'
+        url:
+          type: string
+          format: uri
+          description: The URL of the image
+          example: 'https://anond.hatelabo.jp/images/og-image-1500.gif'
+        alt:
+          type: string
+          nullable: true
+          description: Alternative text for the image, can be null if not specified
+      required:
+        - url
+    ErrorResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          example: tag:boolcheck.com,2024:Not found
+          description: The type of error.
+        title:
+          type: string
+          example: Session not found or invalid
+          description: Detailed error message.
+        instance:
+          type: string
+          nullable: true
+          example: /database/urls/d9860956-bf0e-4eae-9773-b25ecb7ec8c9
+          description: A URI reference that identifies the specific occurrence of the problem.

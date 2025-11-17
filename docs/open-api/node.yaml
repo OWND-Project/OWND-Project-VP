@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: BoolCheck Internal API
+  description: |
+    The BoolCheck API provides data regarding the truthfulness and verification status of URLs. 
+    It allows users to query the service to get information about the authenticity and reliability 
+    of specific URLs, including counts of true, false, and other evaluations, along with related claims.
+  version: 1.0.0
+servers:
+  - url: 'https://node.boolcheck.com'
+    description: Main production server for BoolCheck API
+  - url: 'https://node.develop.boolcheck.com'
+    description: Main development server for BoolCheck API
+components:
+  securitySchemes:
+    bearerAuth: # arbitrary name for the security scheme
+      type: http
+      scheme: bearer
+      bearerFormat: JWT # optional, arbitrary value for documentation purposes
+paths:
+  /database/urls:
+    post:
+      summary: Register new url
+      description: Register new url
+      requestBody:
+        description: Data to register the new url.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: The base URL for the authorization request.
+                  example: "https://example.com"
+      responses:
+        '200':
+          description: Successfully generated authorization request.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/Url'
+        '400':
+          description: Client error.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:BadRequest
+                title: The request is something wrong.
+        '404':
+          description: Not found error.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:NotFound
+                title: URL not found.
+        '409':
+          description: Conflict url.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:Conflict
+                title: URL already exists.
+                instance: /database/urls/d9860956-bf0e-4eae-9773-b25ecb7ec8c9
+        '500':
+          description: Unexpected error.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:UnexpectedError
+                title: Unexpected error occurred.
+  /database/claims/:
+    post:
+      summary: Register a new claim of true false comment
+      description: This endpoint registers a new claim by providing verifiable credentials in the form of ID tokens, comments, and affiliation strings.
+      requestBody:
+        description: Data required to register a new claim, including ID token, comment, and affiliation details.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id_token:
+                  type: string
+                  description: id_token string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+                comment:
+                  type: string
+                  description: claim verifiable credential string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+                affiliation:
+                  type: string
+                  description: affiliation verifiable credential string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+      responses:
+        '201':
+          description: Claim successfully registered. Returns the location of the new resource.
+          headers:
+            Location:
+              description: URL of the newly created resource.
+              schema:
+                type: string
+                example: /claims/{new_claim_id}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: The unique identifier of the created claim.
+                    format: uuid
+                  status:
+                    type: string
+                    description: Status of the created claim.
+                    example: "Created"
+        '400':
+          description: Client error. The request was invalid, possibly due to missing or incorrect data fields.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:BadRequest
+                title: The request is something wrong.
+        '500':
+          description: Unexpected server error. The server encountered an issue while processing the request.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:UnexpectedError
+                title: Unexpected error occurred.
+  /database/claims/{id}:
+    delete:
+      summary: Delete a claim of true false comment
+      description: This endpoint deletes a claim by providing id of the data.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the claim to delete.
+          schema:
+            type: string
+      security:
+        - bearerAuth: [ ] # Assuming Bearer token is used for authorization
+      responses:
+        '204':
+          description: Claim successfully deleted.
+        '400':
+          description: Client error. The request was invalid, possibly due to missing or incorrect data fields.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:BadRequest
+                title: The request is something wrong.
+        '404':
+          description: URL not found
+        '500':
+          description: Unexpected server error. The server encountered an issue while processing the request.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:UnexpectedError
+                title: Unexpected error occurred.

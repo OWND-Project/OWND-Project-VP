@@ -1,0 +1,202 @@
+openapi: 3.1.0
+info:
+  title: BoolCheck Verifier API
+  description: |
+    The BoolCheck API provides data regarding the truthfulness and verification status of URLs. 
+    It allows users to query the service to get information about the authenticity and reliability 
+    of specific URLs, including counts of true, false, and other evaluations, along with related claims.
+  version: 1.0.0
+servers:
+  - url: 'https://verifier.boolcheck.com'
+    description: Main production OID4VP server for BoolCheck API
+  - url: 'https://verifier.develop.boolcheck.com'
+    description: Main development OID4VP server for BoolCheck API
+components:
+  schemas:
+    PostComment:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Type of operation
+          example: "post_comment"
+        url:
+          type: string
+          description: The base URL for the authorization request.
+          example: "https://example.com"
+        comment:
+          type: string
+          description: Additional comments for the request.
+          example: "foo"
+        bool_value:
+          type: integer
+          description: Boolean value represented as an integer (0 or 1).
+          example: 1
+    DeleteComment:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Type of operation
+          example: "delete_comment"
+        id:
+          type: string
+          description: The id of claim for deleting.
+          format: uuid
+paths:
+  /oid4vp/auth-request:
+    post:
+      summary: Generate Authorization Request
+      description: Generates an authorization request based on the provided data.
+      requestBody:
+        description: Data to generate the authorization request.
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/PostComment'
+                - $ref: '#/components/schemas/DeleteComment'
+      responses:
+        '200':
+          description: Successfully generated authorization request.
+          headers:
+            Set-Cookie:
+              description: Contains the request_id for tracking requests
+              schema:
+                type: string
+                example: request_id=abc123; Path=/; Secure; HttpOnly
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: string
+                    description: The generated authorization request URL.
+                    example: "oid4vp://boolcheck.com/oid4vp/?client_id=xxxx&state=yyyy"
+        '400':
+          description: Invalid input data.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+  /oid4vp/response-code/exchange:
+    post:
+      summary: Exchange response code
+      description: Exchange response code for shared data(credentials of claim, id, and affiliation)
+      parameters:
+        - in: query
+          name: response_code
+          required: true
+          schema:
+            type: string
+          description: The response code issued by verifier endpoint to exchange for shared data.
+        - in: query
+          name: type
+          required: true
+          schema:
+            type: string
+          description: Type of operation
+      responses:
+        '204':
+          description: Response code exchanged successfully.
+          headers:
+            Set-Cookie:
+              description: Contains the request_id for tracking requests
+              schema:
+                type: string
+                example: request_id=abc123; Path=/; Secure; HttpOnly
+        '400':
+          description: Session not found or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:InvalidSubmission
+                title: submitted claim is not valid.
+  /oid4vp/comment/confirm:
+    post:
+      summary: Confirm a Claim
+      description: Confirms a claim using the session_id sent via cookie.
+      parameters:
+        - in: cookie
+          name: request_id
+          required: true
+          schema:
+            type: string
+          description: The session identifier to confirm the claim.
+      responses:
+        '200':
+          description: Claim confirmed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claim_id:
+                    type: string
+                    description: The unique identifier of the confirmed claim.
+        '400':
+          description: Session not found or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:Notfound
+                title: session data is not found
+  /oid4vp/comment/cancel:
+    post:
+      summary: Cancel a Claim
+      description: Cancel a claim using the session_id sent via cookie.
+      parameters:
+        - in: cookie
+          name: request_id
+          required: true
+          schema:
+            type: string
+          description: The session identifier to confirm the claim.
+      responses:
+        '204':
+          description: Claim canceled successfully.
+        '400':
+          description: Session not found or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+              example:
+                type: tag:boolcheck.com,2024:Notfound
+                title: session data is not found
+  /oid4vp/comment/states:
+    get:
+      summary: Get Application State
+      description: Retrieves the application state using the request_id specified in the cookie.
+      parameters:
+        - in: cookie
+          name: request_id
+          required: true
+          schema:
+            type: string
+          description: The unique request identifier.
+      responses:
+        '200':
+          description: Successfully retrieved application state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: string
+                    description: The current state of the application.
+                    example: "committed"
+        '400':
+          description: Invalid or missing request_id.
+          content:
+            application/json:
+              schema:
+                $ref: './components.yaml#/components/schemas/ErrorResponse'
+
