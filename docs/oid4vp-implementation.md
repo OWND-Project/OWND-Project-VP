@@ -2,7 +2,7 @@
 
 ## 概要
 
-このドキュメントでは、boolcheckシステムにおけるOpenID for Verifiable Presentations (OID4VP)の実装詳細について説明します。OID4VPは、アイデンティティウォレットから検証可能なクレデンシャルを受け取り、真偽情報（Claims）を安全に登録するための認証プロトコルです。
+このドキュメントでは、OID4VP VerifierシステムにおけるOpenID for Verifiable Presentations (OID4VP)の実装詳細について説明します。OID4VPは、Identity Walletから検証可能なクレデンシャルを受け取り、検証済みデータを安全に取得するための認証プロトコルです。
 
 ## OID4VPとは
 
@@ -10,8 +10,8 @@
 
 ### 主な特徴
 
-- **Verifier**: クレデンシャルの検証を行うサーバー（boolcheckではVERIFIER_NODE）
-- **Holder**: クレデンシャルを保持するウォレットアプリ（ユーザーのアイデンティティウォレット）
+- **Verifier**: クレデンシャルの検証を行うサーバー（本システム）
+- **Holder**: クレデンシャルを保持するウォレットアプリ（ユーザーのIdentity Wallet）
 - **Presentation**: ウォレットがVerifierに提示するクレデンシャルのセット
 - **Presentation Definition**: Verifierが要求するクレデンシャルの条件
 - **SD-JWT**: Selective Disclosure JWT（選択的開示）
@@ -20,8 +20,8 @@
 
 ```
 ┌─────────────┐                                      ┌──────────────┐
-│   Wallet    │                                      │  VERIFIER    │
-│    (Holder) │                                      │     NODE     │
+│   Wallet    │                                      │  OID4VP      │
+│    (Holder) │                                      │   Verifier   │
 └──────┬──────┘                                      └──────┬───────┘
        │                                                     │
        │ 1. POST /oid4vp/auth-request                       │
@@ -68,8 +68,6 @@
        │   { id: "claim789..." }                            │
        │<───────────────────────────────────────────────────│
        │                                                     │
-       │                                  10. POST /database/claims (to BOOL_NODE)
-       │                                     ───────────────>
 ```
 
 ## アーキテクチャ
@@ -78,7 +76,7 @@
 
 ```
 ┌──────────────────────────────────────────────────┐
-│           VERIFIER_NODE (src/oid4vp/)            │
+│        OID4VP Verifier (src/oid4vp/)             │
 ├──────────────────────────────────────────────────┤
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
@@ -95,7 +93,7 @@
 │  ┌────────────┐ ┌──────────┐ ┌─────────┐ ┌────┴──────┐
 │  │  Verifier  │ │ Response │ │  State  │ │  Session  │
 │  │            │ │ Endpoint │ │   Repo  │ │    Repo   │
-│  │ (verifier) │ │(response-│ │         │ │           │
+│  │ (verifier) │ │(response-│ │(SQLite) │ │ (SQLite)  │
 │  │    .ts)    │ │endpoint) │ │         │ │           │
 │  └────────────┘ └──────────┘ └─────────┘ └───────────┘
 │                                                  │
@@ -107,13 +105,12 @@
 │  └──────────────────────────────────────────┘   │
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
-│  │  OrbitDB (OID4VP用)                      │   │
-│  │  - requestsAtResponseEndpoint            │   │
-│  │  - requestsAtVerifier                    │   │
-│  │  - presentationDefinitions               │   │
-│  │  - responsesAtResponseEndpoint           │   │
+│  │  SQLite Database                         │   │
 │  │  - sessions                              │   │
-│  │  - states                                │   │
+│  │  - requests                              │   │
+│  │  - response_codes                        │   │
+│  │  - presentation_definitions              │   │
+│  │  - post_states                           │   │
 │  └──────────────────────────────────────────┘   │
 │                                                  │
 └──────────────────────────────────────────────────┘
@@ -121,16 +118,15 @@
 
 ### データストア
 
-VERIFIER_NODEは、独立したOrbitDBインスタンスを使用してOID4VP関連データを管理：
+OID4VP VerifierはSQLiteデータベースを使用してOID4VP関連データを管理：
 
-| KeyValue名 | 用途 |
+| テーブル名 | 用途 |
 |-----------|------|
-| `requests@response_endpoint` | レスポンスエンドポイントでのリクエスト |
-| `requests@verifier` | Verifierでのリクエスト（nonce含む） |
-| `presentation_definitions` | Presentation Definition |
-| `responses@response_endpoint` | VP Tokenレスポンス |
-| `sessions` | セッション情報（クレーム待機データ） |
-| `states` | ポストステート（認証フローの状態） |
+| `sessions` | OID4VPセッション状態管理（vp_token, credential_dataなど） |
+| `requests` | VP requestメタデータ（response_type, transaction_idなど） |
+| `response_codes` | Authorization response codes（payload, usedフラグ） |
+| `presentation_definitions` | Presentation Definition（JSON形式） |
+| `post_states` | 認証フローの状態追跡（started/consumed/committed/expiredなど） |
 
 ## 認証フロー詳細
 
@@ -458,23 +454,14 @@ const confirmComment = async (requestId, presenter) => {
     ? extractOrgInfo(session.affiliationJwt)
     : undefined;
 
-  // 4. BOOL_NODEにClaim登録
-  const result = await callPostClaim({
-    url,
-    claimer: {
-      id_token: session.idToken,
-      sub: claimerInfo.sub,
-      icon: claimerInfo.icon,
-      organization: affiliationInfo?.organization,
-    },
-    comment: session.claimJwt,
-  });
+  // 4. データ永続化（アプリケーション固有の処理）
+  const result = { id: "claim_abc123" }; // 実装依存
 
   // 5. ポストステート更新
   await updatePostState(requestId, "committed");
 
-  // 6. セッション削除
-  await deleteSession(requestId);
+  // 6. セッション状態を committed に更新
+  await updateSessionState(requestId, "committed");
 
   return presenter(result.id);
 };
@@ -853,14 +840,14 @@ const handleDescriptorError = (error: DescriptorError): NotSuccessResult => {
 
 ## まとめ
 
-boolcheckのOID4VP実装は、以下の特徴を持ちます：
+OID4VP Verifierの実装は、以下の特徴を持ちます：
 
 1. **標準準拠**: OpenID for Verifiable Presentations仕様に準拠
 2. **X.509ベース認証**: `x509_san_dns`スキームによるVerifier認証
 3. **SD-JWT対応**: Selective Disclosure JWTによる選択的開示
 4. **多段階検証**: Presentation → VP → VCの3段階検証
 5. **柔軟なInput Descriptor**: 必須・任意のクレデンシャルを柔軟に要求
-6. **セッション管理**: OrbitDBベースのステートフル認証フロー
-7. **BOOL_NODE連携**: 検証済みクレームを自動的にBOOL_NODEに登録
+6. **セッション管理**: SQLiteベースのステートフル認証フロー
+7. **単一ノード構成**: シンプルな単一プロセスで動作
 
-この実装により、アイデンティティウォレットから信頼性の高い真偽情報を安全に受け取り、分散データベースに永続化することが可能になっています。
+この実装により、Identity Walletから信頼性の高い検証可能なクレデンシャルを安全に受け取り、SQLiteデータベースに保存することが可能になっています。

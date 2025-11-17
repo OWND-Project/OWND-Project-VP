@@ -1,186 +1,328 @@
+# OID4VP Verifier - システムアーキテクチャ
+
+## 概要
+
+このシステムは、OpenID for Verifiable Presentations (OID4VP) プロトコルに準拠した純粋なVerifierとして実装されています。Identity Walletから提示されるVerifiable Credentials (VC) を要求・検証する機能を提供します。
+
 ## 全体構成
 
 ```mermaid
 graph TB
-    C[Mobile/Browser Client] <--> API2(REST API)
-    C2(Identity Wallet) <--> API3(REST API)
-    API3 --> API(REST API)
-    API <--> DB[OrbitDB]
-    API2 <--> DB2[OrbitDB]
-    DB <--> IPFS1[IPFS Node]
-    DB2 <--> IPFS2[IPFS Node]
-    IPFS2 --DIAL--> IPFS1
-    IPFS1 --Sync--> IPFS2
-    DB --Sync--> RDB[SQLite]
-    DB2 --Sync--> RDB2[SQLite]
+    Client[Mobile/Browser Client] -->|HTTPS| Web[Web UI]
+    Wallet[Identity Wallet] -->|OID4VP Protocol| API[OID4VP Verifier API]
 
-    subgraph System[BOOL_NODE]
+    Web -->|REST API| API
+    API --> Interactor[OID4VP Interactor]
+    Interactor --> Repo[Repository Layer]
+    Repo --> DB[(SQLite Database)]
+
+    Interactor --> Verifier[OID4VP Verifier]
+    Verifier --> VCVerify[VC Verification]
+    Verifier --> X509[X.509 Certificate Chain]
+    Verifier --> SDJWT[SD-JWT Processing]
+
+    subgraph "OID4VP Verifier Application"
         API
+        Interactor
+        Repo
+        Verifier
+        VCVerify
+        X509
+        SDJWT
         DB
-        RDB
-        IPFS1
     end
-    subgraph System2[API_NODE]
-        API2
-        DB2
-        RDB2
-        IPFS2
-    end
-    subgraph System3[VERIFIER_NODE]
-        API3
-    end
+
+    style API fill:#e1f5ff
+    style Verifier fill:#fff3e0
+    style DB fill:#f3e5f5
 ```
 
-### データ同期を伴う初期化シーケンス
+## システム特徴
+
+### シンプルな単一ノード構成
+
+- **単一プロセス**: すべての機能が1つのNode.jsプロセスで動作
+- **SQLite永続化**: セッション管理とリクエスト情報をSQLiteに保存
+- **ステートレスAPI**: 検証処理自体はステートレス
+- **スケーラブル**: 水平スケール可能な設計
+
+### OID4VPプロトコル完全準拠
+
+- Presentation Definition生成
+- Authorization Request生成 (署名付き/なし対応)
+- VP Token受信・検証
+- Presentation Submission検証
+- Descriptor Map処理
+
+### 多様なクレデンシャルフォーマット対応
+
+- **jwt_vp_json**: JWT形式のVerifiable Presentation
+- **jwt_vc_json**: JWT形式のVerifiable Credential
+- **vc+sd-jwt**: Selective Disclosure JWT形式のVC
+- **X.509証明書チェーン検証**: x5cヘッダーによる証明書検証
+
+## レイヤーアーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Presentation Layer                     │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  HTTP/REST API (Koa Framework)                   │  │
+│  │  - OID4VP Routes                                 │  │
+│  │  - Session Management (Cookie-based)             │  │
+│  │  - CORS Configuration                            │  │
+│  │  - Error Handling                                │  │
+│  └──────────────────────────────────────────────────┘  │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│                  Use Case Layer                         │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  OID4VP Interactor                               │  │
+│  │  - generateAuthRequest()                         │  │
+│  │  - getRequestObject()                            │  │
+│  │  - getPresentationDefinition()                   │  │
+│  │  - receiveAuthResponse()                         │  │
+│  │  - exchangeAuthResponse()                        │  │
+│  │  - confirmData()                                 │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Credential Processors                           │  │
+│  │  - Input Descriptor Matching                     │  │
+│  │  - Credential Extraction                         │  │
+│  │  - Constraint Validation                         │  │
+│  └──────────────────────────────────────────────────┘  │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│                  Repository Layer                       │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Session Repository (SQLite)                     │  │
+│  │  - putRequestId()                                │  │
+│  │  - putWaitCommitData()                           │  │
+│  │  - getSession()                                  │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Post State Repository (SQLite)                  │  │
+│  │  - putState()                                    │  │
+│  │  - getState()                                    │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Response Endpoint Datastore                     │  │
+│  │  - saveRequest(), getRequest()                   │  │
+│  │  - saveResponse(), getResponse()                 │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Verifier Datastore                              │  │
+│  │  - saveRequest(), getRequest()                   │  │
+│  │  - savePresentationDefinition()                  │  │
+│  │  - getPresentationDefinition()                   │  │
+│  └──────────────────────────────────────────────────┘  │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│               Infrastructure Layer                      │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  OID4VP Core                                     │  │
+│  │  - Authorization Request Builder                 │  │
+│  │  - Presentation Definition Builder               │  │
+│  │  - VP Token Decoder                              │  │
+│  │  - Presentation Submission Validator             │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Verification Tools                              │  │
+│  │  - JWT/JWS Signature Verification                │  │
+│  │  - X.509 Certificate Chain Verification          │  │
+│  │  - SD-JWT Disclosure Processing                  │  │
+│  │  - JWK Thumbprint Calculation                    │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  SQLite Database                                 │  │
+│  │  - WAL Mode Enabled                              │  │
+│  │  - Automatic Cleanup (Expired Records)           │  │
+│  │  - ACID Transactions                             │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+## データフロー
+
+### 1. Presentation Request生成フロー
+
 ```mermaid
 sequenceDiagram
-	box BOOL_NODE
-        participant p1 as OrbitDB(Peer1)
-        participant api1 as Endpoint
-    end
-    box API_NODE
-        participant p2 as OrbitDB(Peer2)
-    end
+    participant Client as Web Client
+    participant API as OID4VP API
+    participant Interactor as OID4VP Interactor
+    participant Repo as Repository
+    participant DB as SQLite
 
-    p1->>p1: init
-    activate p1
-    
-    p1->>p1: create orbitdb
-    p1->>p1: open db
-
-    p2->>p2: init
-    p2->>p2: open db
-    p2->>api1: GET /admin/db/info
-	api1-->>p2: peer addresses / db addresses
-    p2->>p1: dial
-    p1->>p2: sync HEAD
-    
-    deactivate p1
+    Client->>API: POST /oid4vp/auth-request
+    API->>Interactor: generateAuthRequest(payload)
+    Interactor->>Interactor: Generate Presentation Definition
+    Interactor->>Repo: saveRequest(request)
+    Repo->>DB: INSERT INTO requests
+    Interactor->>Repo: savePresentationDefinition(pd)
+    Repo->>DB: INSERT INTO presentation_definitions
+    Interactor->>Repo: putRequestId(requestId)
+    Repo->>DB: INSERT INTO sessions
+    Interactor-->>API: Authorization Request
+    API-->>Client: { authRequest, requestId }
 ```
 
-### 関連API
-以下はOrbitDBをレプリケーションする際に必要となるAPIです。API_NODEは自動的にレプリケーションを開始するため通常はこれらのAPIを呼び出す必要はありません。
+### 2. VP Token検証フロー
 
-| No | endpoint | method | 対象ピア | description                    |
-| --- | --- | --- | --- |--------------------------------|
-| 1 | /admin/peer/info | get | レプリカ | レプリカ側が権限の付与先として自身の情報を取得する       |
-| 2 | /admin/access-right/grant | post | マスター | レプリカからマスターへ権限付与をリクエストする |
-| 3 | /admin/db/info | get | マスター | 同期先のDBのアドレスを取得する               |
-| 4 | /admin/db/sync | post | レプリカ | DB同期を開始する                       |
+```mermaid
+sequenceDiagram
+    participant Wallet as Identity Wallet
+    participant API as Response Endpoint
+    participant Interactor as OID4VP Interactor
+    participant Verifier as OID4VP Verifier
+    participant Repo as Repository
+    participant DB as SQLite
 
-#### 1. ピア情報を取得するAPI
-ピアの情報を取得します。通常権限付与に必要な情報を取得するために使用します。
-
-リクエスト例
-```shell
-curl GET http://localhost:3001/admin/peer/info
+    Wallet->>API: POST /oid4vp/response (vp_token)
+    API->>Interactor: receiveAuthResponse(state, vpToken)
+    Interactor->>Repo: getRequest(requestId)
+    Repo->>DB: SELECT FROM requests
+    Interactor->>Verifier: validateVpToken(vpToken, pd)
+    Verifier->>Verifier: Verify JWT Signature
+    Verifier->>Verifier: Verify X.509 Chain (if x5c)
+    Verifier->>Verifier: Validate Presentation Submission
+    Verifier->>Verifier: Verify Nested Credentials
+    Verifier-->>Interactor: Validation Result
+    Interactor->>Repo: saveResponse(responseCode, vpToken)
+    Repo->>DB: INSERT INTO response_codes
+    Interactor-->>API: { redirect_uri }
+    API-->>Wallet: 302 Redirect
 ```
 
-レスポンス例
-```json
-{
-  "identity": {
-    "hash": "zdpuApFsGKjyj8gce9LkFDdVzqkySgxmtE4RqjvbzmqAiGbCa"
-  },
-  "multiaddrs": [
-    "/ip4/127.0.0.1/tcp/4004/p2p/12D3KooWGQdrhLxznLCp4T3gy8X7YGxYUMn2mA6zBtshJcwWv8LP",
-    "/ip4/192.168.10.105/tcp/4004/p2p/12D3KooWGQdrhLxznLCp4T3gy8X7YGxYUMn2mA6zBtshJcwWv8LP",
-    "/ip4/192.168.64.1/tcp/4004/p2p/12D3KooWGQdrhLxznLCp4T3gy8X7YGxYUMn2mA6zBtshJcwWv8LP"
-  ]
-}
+### 3. Response Code交換フロー
+
+```mermaid
+sequenceDiagram
+    participant Client as Web Client
+    participant API as OID4VP API
+    participant Interactor as OID4VP Interactor
+    participant Repo as Repository
+    participant DB as SQLite
+
+    Client->>API: GET /oid4vp/response-code/:code
+    API->>Interactor: exchangeAuthResponse(code)
+    Interactor->>Repo: getResponse(code)
+    Repo->>DB: SELECT FROM response_codes
+    Repo->>DB: UPDATE response_codes SET used=1
+    Interactor->>Interactor: Extract Credential Data
+    Interactor->>Repo: putWaitCommitData(data)
+    Repo->>DB: UPDATE sessions
+    Interactor-->>API: { requestId, claim }
+    API-->>Client: Credential Data
 ```
 
-#### 2. 書き込み権限を付与するAPI
-書き込み権限を付与する場合、付与したいピアの情報を指定して本APIを呼び出します。
+## 技術スタック
 
-リクエスト例
-```shell
-curl -X POST "http://localhost:3000/admin/access-right/grant" \
-     -H "Content-Type: application/json" \
-     -d '{
-          "identity": {
-            "hash": "zdpuAmJy4oRXnPdj9meJMM1t79zGW1F7V6UiC5t7sTRK5ktRe"
-          },
-          "multiaddrs": [
-            "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWDNA6V8dEWQ1iJyjSAMHtqXdLa9VxbVb31P5EjoCZVqqB",
-            "/ip4/192.168.0.32/tcp/4001/p2p/12D3KooWDNA6V8dEWQ1iJyjSAMHtqXdLa9VxbVb31P5EjoCZVqqB",
-            "/ip4/192.168.64.1/tcp/4001/p2p/12D3KooWDNA6V8dEWQ1iJyjSAMHtqXdLa9VxbVb31P5EjoCZVqqB"
-          ]
-        }'
-```
+### バックエンド
 
-#### 3. DB情報を取得するAPI
-通常、レプリケーションを開始する場合に同期対象のDB情報を取得するために使用します。
+- **Runtime**: Node.js 20+
+- **Framework**: Koa 2.15+
+- **Language**: TypeScript 5.5+
+- **Database**: SQLite 3 (better-sqlite3)
+- **OID4VP**: Custom implementation based on OpenID4VP spec
 
-リクエスト例
-```shell
-curl http://localhost:3000/admin/db/info
-```
+### 主要ライブラリ
 
-レスポンス例
-```json
-{
-  "documents": {
-    "urls": {
-      "address": "/orbitdb/zdpuAo6Bidhze4zt4rs6eq1iWvH2reZFKfwBgPRmFzB7HT4SD",
-      "indexBy": "id"
-    },
-    "claimers": {
-      "address": "/orbitdb/zdpuAnvr8DPwfDkf3MKfAHnfXS4dRsyAfmXxuDF5uAA99vg7s",
-      "indexBy": "id"
-    },
-    "claims": {
-      "address": "/orbitdb/zdpuB2ScVBzdk6KLqjN76UTwUkmBpp8f12B744yieAbaVuY5o",
-      "indexBy": "id"
-    },
-    "affiliations": {
-      "address": "/orbitdb/zdpuAkoQ6jnUzFrdcET5jZZ5T4VRj2zs4haiirQGCL69p5KLa",
-      "indexBy": "id"
-    }
-  },
-  "peer": {
-    "multiaddrs": [
-      "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWSbK7XJy7b9NEJnP5v4kXfSfEe2cXa8mv92wZGKJudFWh",
-      "/ip4/192.168.10.106/tcp/4000/p2p/12D3KooWSbK7XJy7b9NEJnP5v4kXfSfEe2cXa8mv92wZGKJudFWh",
-      "/ip4/192.168.64.1/tcp/4000/p2p/12D3KooWSbK7XJy7b9NEJnP5v4kXfSfEe2cXa8mv92wZGKJudFWh"
-    ]
-  }
-}
+- **@koa/cors**: CORS handling
+- **koa-router**: Routing
+- **koa-session**: Session management
+- **jose**: JWT/JWS operations
+- **@meeco/sd-jwt**: SD-JWT processing
+- **pkijs**: X.509 certificate handling
+- **elliptic-jwk**: Elliptic curve key operations
+- **sqlite**: SQLite database interface
 
-```
+### 開発ツール
 
-#### 4. レプリケーションを開始するAPI
-同期対象のDB情報を指定してレプリケーションを開始します。
+- **TypeScript**: Type-safe development
+- **Mocha**: Testing framework
+- **ESLint**: Code linting
+- **Prettier**: Code formatting
 
-リクエスト例
-```shell
-curl -X POST "http://localhost:3001/admin/db/sync" \
-     -H "Content-Type: application/json" \
-     -d '{
-          "documents": {
-            "urls": {
-              "address": "/orbitdb/zdpuB2PP3LmNpyPT1ZTBUeh4uidHhgv3VhubykDKZSLGofBPJ",
-              "indexBy": "id"
-            },
-            "claimers": {
-              "address": "/orbitdb/zdpuAoj8sDxM8LfAu4K9ufoWKMEiVrbLTvS9om1bY1u9zP8ao",
-              "indexBy": "id"
-            },
-            "claims": {
-              "address": "/orbitdb/zdpuAx2asDX2gsURW3qTrJLGpWM1xas1kaHXnJ7HiTa1C6MDL",
-              "indexBy": "id"
-            },
-            "affiliates": {
-              "address": "/orbitdb/zdpuAxw1Jc2NsJcJ61p54M27nBCfgCMFnvyvEPfBPrpZtzjoy",
-              "indexBy": "id"
-            }
-          },
-          "peer": {
-            "multiaddrs": [
-              "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWAoC8wrTvYfe1oUXx7hnGQ2XwA5BKkWFswPxsaFPxSeb4",
-              "/ip4/192.168.0.32/tcp/4000/p2p/12D3KooWAoC8wrTvYfe1oUXx7hnGQ2XwA5BKkWFswPxsaFPxSeb4",
-              "/ip4/192.168.64.1/tcp/4000/p2p/12D3KooWAoC8wrTvYfe1oUXx7hnGQ2XwA5BKkWFswPxsaFPxSeb4"
-            ]
-          }
-        }'
-```
+## セキュリティ特性
+
+### データ保護
+
+- **一時的なセッションデータ**: セッション情報は有効期限付きで保存
+- **自動クリーンアップ**: 期限切れレコードの自動削除
+- **SQLiteトランザクション**: ACID特性による整合性保証
+
+### 通信セキュリティ
+
+- **HTTPS必須**: 本番環境ではHTTPS通信を推奨
+- **CORS設定**: オリジンベースのアクセス制御
+- **Cookie-based Session**: httpOnly, secure属性設定
+
+### OID4VP検証
+
+- **署名検証**: JWS署名の厳密な検証
+- **X.509証明書チェーン検証**: 証明書の有効性と信頼チェーンの検証
+- **Nonce検証**: リプレイアタック対策
+- **有効期限チェック**: exp, iat, nbfクレームの検証
+- **Presentation Submission検証**: Descriptor Mapとの整合性検証
+
+## スケーラビリティ
+
+### 水平スケール戦略
+
+1. **ステートレスアプリケーション層**
+   - セッション情報はSQLiteに保存
+   - 複数インスタンス起動可能
+
+2. **SQLite + ロードバランサー**
+   - 読み取り専用レプリカの作成
+   - LiteStreamによるレプリケーション
+
+3. **分散キャッシュ (将来拡張)**
+   - Redisによるセッション共有
+   - リクエスト情報のキャッシング
+
+### パフォーマンス最適化
+
+- **WALモード**: SQLiteの並行アクセス性能向上
+- **インデックス最適化**: 頻繁なクエリに対するインデックス
+- **自動クリーンアップ**: 定期的な期限切れデータ削除
+
+## 監視とロギング
+
+### ログレベル
+
+- **error**: エラー発生時
+- **warn**: 警告（期限切れ、検証失敗など）
+- **info**: リクエスト処理、検証成功
+- **debug**: 詳細なデバッグ情報
+
+### 監視項目
+
+- リクエスト処理時間
+- 検証成功率
+- エラー発生率
+- データベース接続数
+
+## 今後の拡張可能性
+
+### 短期的拡張
+
+- [ ] メトリクス収集 (Prometheus)
+- [ ] ヘルスチェックエンドポイント
+- [ ] 管理用ダッシュボード
+
+### 中期的拡張
+
+- [ ] 複数Presentation Definitionテンプレート
+- [ ] Credential Issuer連携
+- [ ] Batch検証API
+
+### 長期的拡張
+
+- [ ] 分散キャッシュ対応
+- [ ] マイクロサービス化
+- [ ] Kubernetes対応

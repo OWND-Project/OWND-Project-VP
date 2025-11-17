@@ -1,704 +1,32 @@
-# API仕様ドキュメント
+# OID4VP Verifier - API仕様ドキュメント
 
 ## 概要
 
-boolcheckシステムは、3つのノードタイプがそれぞれ異なるREST APIを公開しています。このドキュメントでは、各APIエンドポイントの仕様、リクエスト/レスポンス形式、エラーハンドリング、認証方法について詳述します。
+OID4VP VerifierシステムはOpenID for Verifiable Presentations (OID4VP) プロトコルに準拠した純粋なVerifierとして実装されています。このドキュメントでは、各APIエンドポイントの仕様、リクエスト/レスポンス形式、エラーハンドリング、認証方法について詳述します。
 
-## ノード別API構成
+## システム構成
 
-| ノードタイプ | ベースパス | 公開API | CORS設定 |
-|-------------|-----------|---------|---------|
-| BOOL_NODE | `http://localhost:3000` | Database API, Admin API | 特定オリジンからのPOSTのみ |
-| API_NODE | `http://localhost:3001` | Database API (read-only) | 全オリジンからのGETのみ |
-| VERIFIER_NODE | `http://localhost:3002` | OID4VP API | 特定オリジンからのGET/POST、credentials有効 |
-
-## Database API
-
-Database APIは、URL、Claim、Claimerの管理を担当します。BOOL_NODEは読み書き両方、API_NODEは読み取り専用です。
-
-### Base URL
-
-- BOOL_NODE: `http://localhost:3000/database`
-- API_NODE: `http://localhost:3001/database`
-
----
-
-### POST /database/urls
-
-URLを登録し、OGPメタデータを取得します。
-
-**アクセス**: BOOL_NODEのみ
-
-**リクエスト**:
-
-```http
-POST /database/urls HTTP/1.1
-Content-Type: application/json
-
-{
-  "url": "https://example.com/article/123"
-}
-```
-
-**リクエストボディ**:
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `url` | string | ✓ | 登録するURL（完全なURL形式） |
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-  "url": "https://example.com/article/123",
-  "domain": "example.com",
-  "title": "記事のタイトル",
-  "content_type": "text/html",
-  "description": "記事の説明文...",
-  "image": [
-    {
-      "url": "https://example.com/og-image.jpg",
-      "width": 1200,
-      "height": 630,
-      "type": "image/jpeg"
-    }
-  ],
-  "created_at": "2025-01-15T10:30:00.000Z",
-  "true_count": 0,
-  "false_count": 0,
-  "else_count": 0,
-  "verified_true_count": 0,
-  "verified_false_count": 0,
-  "verified_else_count": 0
-}
-```
-
-**レスポンスボディ**:
-
-`UrlResource`型（詳細は[レスポンス型定義](#レスポンス型定義)を参照）
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | `INVALID_PARAMETER` | リクエストボディが不正 |
-| 404 | `NOT_FOUND` | URLが存在しない、またはアクセス不可 |
-| 409 | `CONFLICT` | URLが既に登録済み（`instance`フィールドに既存URLのパスを含む） |
-| 500 | `INTERNAL_ERROR` | サーバー内部エラー |
-
-**例**: URLが既に登録済みの場合
-
-```json
-{
-  "type": "CONFLICT",
-  "message": "URL already exists",
-  "instance": "/database/urls/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
-}
-```
-
----
-
-### GET /database/urls
-
-URL一覧を取得します。フィルタリング・ソート機能をサポート。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/urls?filter=example.com&sort=-verified_true_count&start_date=2025-01-01T00:00:00Z HTTP/1.1
-```
-
-**クエリパラメータ**:
-
-| パラメータ | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `filter` | string | - | URL部分一致検索 |
-| `start_date` | string | - | ISO 8601形式の日時。この日時以降に作成されたクレームのみを持つURLを取得 |
-| `sort` | string | - | ソートキー。`true_count`, `false_count`, `created_at`のいずれか。先頭に`-`を付けると降順 |
-
-**レスポンス** (200 OK):
-
-```json
-[
-  {
-    "id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-    "url": "https://example.com/article/123",
-    "domain": "example.com",
-    "title": "記事のタイトル",
-    "content_type": "text/html",
-    "description": "記事の説明文...",
-    "image": [...],
-    "created_at": "2025-01-15T10:30:00.000Z",
-    "true_count": 10,
-    "false_count": 3,
-    "else_count": 1,
-    "verified_true_count": 8,
-    "verified_false_count": 2,
-    "verified_else_count": 0
-  },
-  ...
-]
-```
-
-**レスポンスボディ**:
-
-`UrlResource[]`型の配列
-
----
-
-### GET /database/urls/:id
-
-URL詳細を取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/urls/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6 HTTP/1.1
-```
-
-**パスパラメータ**:
-
-| パラメータ | 型 | 説明 |
-|-----------|---|------|
-| `id` | string | UrlDocumentのID（32文字のUUID） |
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-  "url": "https://example.com/article/123",
-  "domain": "example.com",
-  "title": "記事のタイトル",
-  ...
-}
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | - | URLが見つからない |
-
----
-
-### GET /database/urls/:id/metadata
-
-URLのメタデータのみを取得します（クレーム集計情報を含まない）。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/urls/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6/metadata HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-  "url": "https://example.com/article/123",
-  "domain": "example.com",
-  "title": "記事のタイトル",
-  "content_type": "text/html",
-  "description": "記事の説明文...",
-  "image": [...],
-  "created_at": "2025-01-15T10:30:00.000Z"
-}
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | `NOT_FOUND` | URLが見つからない |
-
----
-
-### GET /database/urls/:id/claims
-
-指定URLに紐づくClaim一覧を取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/urls/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6/claims HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-[
-  {
-    "id": "claim123...",
-    "url": {
-      "id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-      "url": "https://example.com/article/123",
-      ...
-    },
-    "claimer": {
-      "id": "claimer456...",
-      "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-      "icon": "https://example.com/icon.png",
-      "organization": "Example Org"
-    },
-    "comment": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "created_at": "2025-01-15T11:00:00.000Z"
-  },
-  ...
-]
-```
-
-**レスポンスボディ**:
-
-`ClaimResource[]`型の配列
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | - | URLが見つからない |
-
----
-
-### POST /database/claims
-
-Claimを作成します。
-
-**アクセス**: BOOL_NODEのみ
-
-**リクエスト**:
-
-```http
-POST /database/claims HTTP/1.1
-Content-Type: application/json
-
-{
-  "url": "https://example.com/article/123",
-  "claimer": {
-    "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "sub": "user@example.com",
-    "organization": "Example Org",
-    "icon": "https://example.com/icon.png"
-  },
-  "comment": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-**リクエストボディ**:
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `url` | string | ✓ | 対象URL（登録済みである必要がある） |
-| `claimer.id_token` | string | ✓ | ClaimerのJWTトークン |
-| `claimer.sub` | string | ✓ | ClaimerのOpenID subject識別子 |
-| `claimer.organization` | string | - | 組織名（検証済みクレームの場合） |
-| `claimer.icon` | string | - | ClaimerのアイコンURL |
-| `comment` | string | ✓ | SD-JWT形式のクレーム本体 |
-
-**レスポンス** (201 Created):
-
-```json
-{
-  "id": "claim789...",
-  "status": "Created"
-}
-```
-
-**ヘッダー**:
-
-```
-Location: /database/claims/claim789...
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | `INVALID_PARAMETER` | リクエストボディが不正、またはURLが未登録 |
-
----
-
-### GET /database/claims/:id
-
-Claim詳細を取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/claims/claim789... HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "claim789...",
-  "url": {
-    "id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
-    "url": "https://example.com/article/123",
-    ...
-  },
-  "claimer": {
-    "id": "claimer456...",
-    "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "icon": "https://example.com/icon.png",
-    "organization": "Example Org"
-  },
-  "comment": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "created_at": "2025-01-15T11:00:00.000Z"
-}
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | - | Claimが見つからない |
-
----
-
-### DELETE /database/claims/:id
-
-Claimを削除します（論理削除）。
-
-**アクセス**: BOOL_NODEのみ
-
-**認証**: Bearerトークン必須（Claimを作成したClaimerのid_token）
-
-**リクエスト**:
-
-```http
-DELETE /database/claims/claim789... HTTP/1.1
-Authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
-**レスポンス** (204 No Content):
-
-（ボディなし）
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 401 | `Unauthorized` | Authorizationヘッダーが欠落、または形式が不正 |
-| 403 | `KEY_DOES_NOT_MATCH` | トークンがClaim作成者と一致しない |
-| 404 | - | Claimが見つからない |
-
----
-
-### GET /database/claimers/:id
-
-Claimer情報を取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/claimers/claimer456... HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "claimer456...",
-  "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "icon": "https://example.com/icon.png",
-  "organization": "Example Org",
-  "created_at": "2025-01-15T10:00:00.000Z"
-}
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | - | Claimerが見つからない |
-
----
-
-### GET /database/claimers/:id/claims
-
-指定Claimerが作成したClaim一覧を取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/claimers/claimer456.../claims HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-[
-  {
-    "id": "claim789...",
-    "url": {...},
-    "claimer": {...},
-    "comment": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "created_at": "2025-01-15T11:00:00.000Z"
-  },
-  ...
-]
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | - | Claimerが見つからない |
-
----
-
-### GET /database/backup
-
-全データのバックアップを取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /database/backup HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "urls": [...],
-  "claimers": [...],
-  "affiliations": [...],
-  "claims": [...]
-}
-```
-
----
-
-### POST /database/restore
-
-バックアップデータからリストアします。
-
-**アクセス**: BOOL_NODEのみ
-
-**リクエスト**:
-
-```http
-POST /database/restore HTTP/1.1
-Content-Type: application/json
-
-{
-  "urls": [...],
-  "claimers": [...],
-  "affiliations": [...],
-  "claims": [...]
-}
-```
-
-**レスポンス** (200 OK):
-
-（実装による）
-
----
-
-## Admin API
-
-Admin APIは、OrbitDBノードの管理機能を提供します。BOOL_NODE、API_NODEで利用可能。
-
-### Base URL
-
-- BOOL_NODE: `http://localhost:3000/admin`
-- API_NODE: `http://localhost:3001/admin`
-
----
-
-### GET /admin/peer/info
-
-現在のノードのPeer情報を取得します。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-GET /admin/peer/info HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "identity": {
-    "hash": "zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz"
-  },
-  "multiaddrs": [
-    "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWQecqt7GuK3NGvFaPPkGGu5UctugTjGTSe9BByAJve5m8",
-    "/ip4/192.168.1.100/tcp/4000/p2p/12D3KooWQecqt7GuK3NGvFaPPkGGu5UctugTjGTSe9BByAJve5m8"
-  ]
-}
-```
-
-**レスポンスボディ**:
-
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `identity.hash` | string | OrbitDB IdentityのCIDハッシュ |
-| `multiaddrs` | string[] | libp2pマルチアドレス配列 |
-
----
-
-### POST /admin/access-right/grant
-
-他のノードに書き込み権限を付与します。
-
-**アクセス**: BOOL_NODEのみ
-
-**リクエスト**:
-
-```http
-POST /admin/access-right/grant HTTP/1.1
-Content-Type: application/json
-
-{
-  "identity": {
-    "hash": "zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz"
-  },
-  "multiaddrs": [
-    "/ip4/192.168.1.101/tcp/4001/p2p/12D3KooWXYZ..."
-  ]
-}
-```
-
-**リクエストボディ**:
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `identity.hash` | string | ✓ | 権限を付与するノードのIdentityハッシュ |
-| `multiaddrs` | string[] | ✓ | 権限を付与するノードのマルチアドレス |
-
-**レスポンス** (204 No Content):
-
-（ボディなし）
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | - | リクエストボディが不正、またはデータベースが未初期化 |
-
----
-
-### GET /admin/db/info
-
-OrbitDBドキュメント情報を取得します。
-
-**アクセス**: BOOL_NODEのみ（API_NODEはこのエンドポイントにアクセスして同期を開始）
-
-**リクエスト**:
-
-```http
-GET /admin/db/info HTTP/1.1
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "documents": {
-    "urls": {
-      "address": "/orbitdb/zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz/urls",
-      "indexBy": "id"
-    },
-    "claimers": {
-      "address": "/orbitdb/zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz/claimers",
-      "indexBy": "id"
-    },
-    "claims": {
-      "address": "/orbitdb/zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz/claims",
-      "indexBy": "id"
-    },
-    "affiliations": {
-      "address": "/orbitdb/zdpuAtRaxsrGj93bD6DmcruYvaNeuP7sgWDYsXCPTqCs8d1Lz/affiliations",
-      "indexBy": "id"
-    }
-  },
-  "peer": {
-    "multiaddrs": [
-      "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWQecqt7GuK3NGvFaPPkGGu5UctugTjGTSe9BByAJve5m8"
-    ]
-  }
-}
-```
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | - | データベースが未初期化 |
-
----
-
-### POST /admin/db/sync
-
-OrbitDBドキュメントを同期します（通常はAPI_NODEが内部的に使用）。
-
-**アクセス**: BOOL_NODE、API_NODE
-
-**リクエスト**:
-
-```http
-POST /admin/db/sync HTTP/1.1
-Content-Type: application/json
-
-{
-  "documents": {...},
-  "peer": {...}
-}
-```
-
-**レスポンス** (204 No Content):
-
-（ボディなし）
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | - | リクエストボディが不正 |
-| 500 | - | 同期エラー |
-
----
+| 構成要素 | ベースパス | 公開API | CORS設定 |
+|---------|-----------|---------|---------|
+| OID4VP Verifier | `http://localhost:3000` | OID4VP API | 特定オリジンからのGET/POST、credentials有効 |
 
 ## OID4VP API
 
-OID4VP APIは、OpenID for Verifiable Presentationsプロトコルを実装し、アイデンティティウォレットとの連携を提供します。
+OID4VP APIは、OpenID for Verifiable Presentationsプロトコルを実装し、Identity Walletとの連携を提供します。
 
 ### Base URL
 
-- VERIFIER_NODE: `http://localhost:3002/oid4vp`
+- `http://localhost:3000/oid4vp`
 
 ---
 
-### POST /oid4vp/auth-request
+## エンドポイント一覧
 
-認証リクエストを生成します。
+### 1. Authorization Request生成
 
-**アクセス**: VERIFIER_NODEのみ
+#### POST /oid4vp/auth-request
+
+Verifiable Presentationをリクエストするための認証リクエストを生成します。
 
 **リクエスト**:
 
@@ -716,20 +44,27 @@ Content-Type: application/json
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|---|------|------|
-| `type` | string | - | `"post_comment"` (デフォルト) または削除用の別タイプ |
-| `url` | string | ✓ | 対象URL |
+| `type` | string | - | リクエストタイプ（デフォルト: `"post_comment"`） |
+| `url` | string | - | 対象URL（typeによっては必須） |
 
 **レスポンス** (200 OK):
 
 ```json
 {
-  "value": "oid4vp://localhost/request?client_id=http://localhost&request_uri=http://localhost/oid4vp/request%3Fid%3Dreq123..."
+  "value": "oid4vp://example.com/request?client_id=http://localhost:3000&request_uri=http://localhost:3000/oid4vp/request%3Fid%3Dreq_abc123%26presentationDefinitionId%3Dpd_xyz789"
 }
 ```
 
+**レスポンスボディ**:
+
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `value` | string | OID4VP URIスキームのAuthorization Request URL |
+
 **セッション**:
 
-セッションCookieに`request_id`を設定
+- セッションCookieに`request_id`を設定
+- `transaction_id`が存在する場合は設定
 
 **エラーレスポンス**:
 
@@ -737,31 +72,54 @@ Content-Type: application/json
 |-----------|-------------|------|
 | 400 | `INVALID_PARAMETER` | リクエストボディが不正 |
 
+**処理フロー**:
+1. Presentation Definitionを生成
+2. リクエストIDをSQLiteのsessionsテーブルに保存（状態: `started`）
+3. Authorization Requestを生成
+4. セッションに`request_id`を設定
+5. OID4VP URIを返却
+
 ---
 
-### GET /oid4vp/request
+### 2. Request Object取得
 
-認証リクエストオブジェクトを取得します（ウォレットアプリが使用）。
+#### GET /oid4vp/request
 
-**アクセス**: VERIFIER_NODEのみ
+Identity Walletが使用するRequest Objectを取得します。
 
 **リクエスト**:
 
 ```http
-GET /oid4vp/request?type=post_comment&id=req123&presentationDefinitionId=pd456 HTTP/1.1
+GET /oid4vp/request?id=req_abc123&presentationDefinitionId=pd_xyz789 HTTP/1.1
 ```
 
 **クエリパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|---|------|------|
-| `type` | string | - | `"post_comment"` (デフォルト) |
-| `id` | string | ✓ | リクエストID |
+| `id` | string | ✓ | リクエストID（UUIDv4） |
 | `presentationDefinitionId` | string | ✓ | Presentation Definition ID |
 
 **レスポンス** (200 OK):
 
-（OID4VPリクエストオブジェクト）
+```json
+{
+  "response_type": "vp_token",
+  "response_mode": "direct_post",
+  "response_uri": "http://localhost:3000/oid4vp/responses",
+  "client_id": "http://localhost:3000",
+  "nonce": "n-0S6_WzA2Mj",
+  "state": "req_abc123",
+  "presentation_definition": {
+    "id": "pd_xyz789",
+    "input_descriptors": [...]
+  }
+}
+```
+
+**レスポンスボディ**:
+
+OID4VP Request Object（詳細は[OID4VP仕様](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)を参照）
 
 **エラーレスポンス**:
 
@@ -772,21 +130,56 @@ GET /oid4vp/request?type=post_comment&id=req123&presentationDefinitionId=pd456 H
 
 ---
 
-### GET /oid4vp/presentation-definition
+### 3. Presentation Definition取得
 
-Presentation Definitionを取得します（ウォレットアプリが使用）。
+#### GET /oid4vp/presentation-definition
 
-**アクセス**: VERIFIER_NODEのみ
+Presentation Definitionを取得します。
 
 **リクエスト**:
 
 ```http
-GET /oid4vp/presentation-definition?id=pd456 HTTP/1.1
+GET /oid4vp/presentation-definition?id=pd_xyz789 HTTP/1.1
 ```
+
+**クエリパラメータ**:
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|---|------|------|
+| `id` | string | ✓ | Presentation Definition ID |
 
 **レスポンス** (200 OK):
 
-（Presentation Definitionオブジェクト）
+```json
+{
+  "id": "pd_xyz789",
+  "input_descriptors": [
+    {
+      "id": "id_token_input",
+      "format": {
+        "jwt_vc_json": {
+          "proof_type": ["JsonWebSignature2020"]
+        }
+      },
+      "constraints": {
+        "fields": [
+          {
+            "path": ["$.type"],
+            "filter": {
+              "type": "string",
+              "pattern": "^VerifiableCredential$"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**レスポンスボディ**:
+
+[DIF Presentation Exchange](https://identity.foundation/presentation-exchange/)仕様準拠のPresentation Definition
 
 **エラーレスポンス**:
 
@@ -796,11 +189,11 @@ GET /oid4vp/presentation-definition?id=pd456 HTTP/1.1
 
 ---
 
-### POST /oid4vp/responses
+### 4. Authorization Response受信
 
-ウォレットから認証レスポンス（VP Token）を受信します。
+#### POST /oid4vp/responses
 
-**アクセス**: VERIFIER_NODEのみ
+Identity WalletからVerifiable Presentationを受信します（Response Endpoint）。
 
 **リクエスト**:
 
@@ -808,16 +201,16 @@ GET /oid4vp/presentation-definition?id=pd456 HTTP/1.1
 POST /oid4vp/responses HTTP/1.1
 Content-Type: application/x-www-form-urlencoded
 
-vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=...&state=state123
+vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=%7B%22id%22%3A%22sub123%22%7D&state=req_abc123
 ```
 
 **リクエストボディ** (application/x-www-form-urlencoded):
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|---|------|------|
-| `vp_token` | string | ✓ | VP Token (SD-JWT形式) |
-| `presentation_submission` | string | ✓ | Presentation Submission |
-| `state` | string | ✓ | State値 |
+| `vp_token` | string | ✓ | VP Token（JWT形式またはSD-JWT形式） |
+| `presentation_submission` | string | ✓ | Presentation Submission（JSON文字列） |
+| `state` | string | ✓ | リクエスト時のState値（`request_id`） |
 
 **レスポンス** (200 OK):
 
@@ -827,32 +220,52 @@ vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=...&sta
 }
 ```
 
+**レスポンスボディ**:
+
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `redirect_uri` | string | クライアントへのリダイレクトURI（レスポンスコード含む） |
+
+**検証処理**:
+1. VP Tokenの署名検証（JWS/JWT）
+2. X.509証明書チェーン検証（x5cヘッダーがある場合）
+3. Presentation Submissionの検証
+4. Descriptor Mapとの整合性検証
+5. ネストされたCredentialの検証
+6. セッション状態を`consumed`に更新
+7. レスポンスコードを生成してresponse_codesテーブルに保存
+
 **エラーレスポンス**:
 
 | ステータス | エラータイプ | 説明 |
 |-----------|-------------|------|
 | 400 | `INVALID_PARAMETER` | リクエストボディが不正 |
+| 400 | `INVALID_SUBMISSION` | Presentation Submissionが不正 |
+
+**環境変数**:
+
+- `OID4VP_VERIFIER_AUTH_RESPONSE_LIMIT`: リクエストボディサイズ制限（デフォルト: 1mb）
 
 ---
 
-### POST /oid4vp/response-code/exchange
+### 5. Response Code交換
 
-レスポンスコードを交換してクレーム情報を取得します。
+#### POST /oid4vp/response-code/exchange
 
-**アクセス**: VERIFIER_NODEのみ
+レスポンスコードを交換してクレデンシャルデータを取得します。
 
 **リクエスト**:
 
 ```http
-POST /oid4vp/response-code/exchange?response_code=091535f699ea575c7937fa5f0f454aee&type=post_comment HTTP/1.1
+POST /oid4vp/response-code/exchange?response_code=091535f699ea575c7937fa5f0f454aee HTTP/1.1
+Cookie: koa.sess=...
 ```
 
 **クエリパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|---|------|------|
-| `response_code` | string | ✓ | レスポンスコード |
-| `type` | string | - | `"post_comment"` (デフォルト) |
+| `response_code` | string | ✓ | レスポンスコード（UUID） |
 
 **レスポンス** (200 OK):
 
@@ -869,23 +282,37 @@ POST /oid4vp/response-code/exchange?response_code=091535f699ea575c7937fa5f0f454a
 }
 ```
 
+**レスポンスボディ**:
+
+レスポンスボディはリクエストタイプによって異なります。上記は`post_comment`タイプの例です。
+
 **セッション**:
 
-セッションCookieに`request_id`を設定
+- セッションCookieに`request_id`を設定
+- セッション状態を`consumed`に更新
+
+**処理フロー**:
+1. レスポンスコードの有効性確認（response_codesテーブル）
+2. レスポンスコードを使用済みに設定（used=1）
+3. VP Tokenからクレデンシャルデータを抽出
+4. データをsessions.credential_dataに保存
+5. クレデンシャルデータを返却
 
 **エラーレスポンス**:
 
 | ステータス | エラータイプ | 説明 |
 |-----------|-------------|------|
 | 400 | `INVALID_PARAMETER` | レスポンスコードが不正 |
+| 404 | - | レスポンスコードが見つからない |
+| 410 | `EXPIRED` | レスポンスコードが期限切れ |
 
 ---
 
-### POST /oid4vp/comment/confirm
+### 6. コメント確定
 
-クレームをBOOL_NODEに送信して確定します。
+#### POST /oid4vp/comment/confirm
 
-**アクセス**: VERIFIER_NODEのみ
+検証済みクレデンシャルデータを確定します。
 
 **認証**: セッションCookieに`request_id`が必要
 
@@ -900,27 +327,41 @@ Cookie: koa.sess=...
 
 ```json
 {
-  "id": "claim789..."
+  "id": "claim_abc123"
 }
 ```
 
+**レスポンスボディ**:
+
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `id` | string | 作成されたクレームID |
+
 **セッション**:
 
-セッションを無効化（`ctx.session = null`）
+確定後、セッションを無効化（`ctx.session = null`）
+
+**処理フロー**:
+1. セッションから`request_id`を取得
+2. sessions.credential_dataからデータを取得
+3. データを永続化（アプリケーション固有の処理）
+4. セッション状態を`committed`に更新
+5. セッションを無効化
 
 **エラーレスポンス**:
 
 | ステータス | エラータイプ | 説明 |
 |-----------|-------------|------|
-| 400 | - | セッションが不正 |
+| 400 | `INVALID_HEADER` | セッションが不正 |
+| 404 | - | セッションが見つからない |
 
 ---
 
-### POST /oid4vp/comment/cancel
+### 7. コメントキャンセル
 
-クレーム作成をキャンセルします。
+#### POST /oid4vp/comment/cancel
 
-**アクセス**: VERIFIER_NODEのみ
+クレデンシャルデータの確定をキャンセルします。
 
 **認証**: セッションCookieに`request_id`が必要
 
@@ -935,19 +376,24 @@ Cookie: koa.sess=...
 
 （ボディなし）
 
+**処理フロー**:
+1. セッション状態を`canceled`に更新
+2. post_statesテーブルの状態を更新
+
 **エラーレスポンス**:
 
 | ステータス | エラータイプ | 説明 |
 |-----------|-------------|------|
-| 400 | - | セッションが不正 |
+| 400 | `INVALID_HEADER` | セッションが不正 |
+| 404 | - | セッションが見つからない |
 
 ---
 
-### GET /oid4vp/comment/states
+### 8. 状態取得
 
-クレーム作成の状態を取得します。
+#### GET /oid4vp/comment/states
 
-**アクセス**: VERIFIER_NODEのみ
+現在のセッション状態を取得します。
 
 **認証**: セッションCookieに`request_id`が必要
 
@@ -962,20 +408,26 @@ Cookie: koa.sess=...
 
 ```json
 {
-  "value": "committed"
+  "value": "consumed"
 }
 ```
 
-**ステート値**:
+**レスポンスボディ**:
 
-| 値 | 説明 |
-|----|------|
-| `"started"` | 認証リクエスト生成済み |
-| `"consumed"` | レスポンスコード交換済み |
-| `"committed"` | クレーム確定済み |
-| `"expired"` | セッション期限切れ |
-| `"canceled"` | キャンセル済み |
-| `"invalid_submission"` | 無効な提出 |
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `value` | string | 現在の状態値 |
+
+**状態値一覧**:
+
+| 値 | 説明 | データフロー |
+|----|------|------------|
+| `started` | 認証リクエスト生成済み | POST /auth-request完了 |
+| `consumed` | レスポンスコード交換済み | POST /response-code/exchange完了 |
+| `committed` | クレデンシャル確定済み | POST /comment/confirm完了 |
+| `expired` | セッション期限切れ | 有効期限超過 |
+| `canceled` | キャンセル済み | POST /comment/cancel実行 |
+| `invalid_submission` | 無効な提出 | Presentation Submission検証失敗 |
 
 **セッション**:
 
@@ -986,68 +438,56 @@ Cookie: koa.sess=...
 | ステータス | エラータイプ | 説明 |
 |-----------|-------------|------|
 | 400 | `INVALID_HEADER` | セッションが不正 |
-| 404 | - | ステートが見つからない |
+| 404 | - | 状態が見つからない |
 
 ---
 
-## レスポンス型定義
+## 認証・認可
 
-### UrlResource
+### セッション認証
 
-```typescript
-interface UrlResource {
-  id: string;                       // UrlDocumentのID
-  url: string;                      // 完全なURL
-  domain?: string;                  // ドメイン名
-  title?: string;                   // ページタイトル
-  content_type?: string;            // MIMEタイプ
-  description?: string;             // メタディスクリプション
-  image?: ImageType[];              // 画像情報配列
-  created_at: string;               // ISO 8601形式のタイムスタンプ
-  true_count?: number;              // TRUEクレーム数
-  false_count?: number;             // FALSEクレーム数
-  else_count?: number;              // ELSEクレーム数
-  verified_true_count?: number;     // 検証済みTRUEクレーム数
-  verified_false_count?: number;    // 検証済みFALSEクレーム数
-  verified_else_count?: number;     // 検証済みELSEクレーム数
-}
-```
+OID4VP APIはCookie-basedセッション認証を使用します。
 
-### ImageType
+**セッション設定**:
 
 ```typescript
-interface ImageType {
-  height?: number;                  // 画像の高さ (px)
-  width?: number;                   // 画像の幅 (px)
-  type?: string;                    // MIMEタイプ
-  url: string;                      // 画像URL
-  alt?: string;                     // 代替テキスト
-}
+app.keys = [process.env.OID4VP_COOKIE_SECRET];
+app.use(session({
+  maxAge: 60 * 60 * 1000,  // 1時間
+  signed: true,
+  httpOnly: true,
+  secure: NODE_ENV !== 'local',
+  sameSite: 'none'
+}, app));
 ```
 
-### ClaimResource
+**セッションフィールド**:
+
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `request_id` | string | リクエストID（UUIDv4） |
+| `transaction_id` | string | トランザクションID（オプション） |
+
+**対象エンドポイント**:
+- `POST /oid4vp/response-code/exchange`
+- `POST /oid4vp/comment/confirm`
+- `POST /oid4vp/comment/cancel`
+- `GET /oid4vp/comment/states`
+
+---
+
+## CORS設定
 
 ```typescript
-interface ClaimResource {
-  id: string;                       // ClaimDocumentのID
-  url: UrlResource;                 // 対象URL情報
-  claimer: ClaimerResource;         // Claimer情報
-  comment: string;                  // SD-JWT形式のクレーム本体
-  created_at: string;               // ISO 8601形式のタイムスタンプ
-}
+cors({
+  origin: process.env.APP_HOST,        // 特定オリジンのみ
+  allowMethods: ['POST', 'GET'],       // POSTとGET
+  credentials: true                    // Cookie送信を許可
+})
 ```
 
-### ClaimerResource
-
-```typescript
-interface ClaimerResource {
-  id: string;                       // ClaimerDocumentのID
-  id_token: string;                 // JWTトークン
-  icon?: string;                    // アイコンURL
-  organization?: string;            // 組織名
-  created_at: string;               // ISO 8601形式のタイムスタンプ
-}
-```
+**環境変数**:
+- `APP_HOST`: 許可するオリジン（例: `https://example.com`）
 
 ---
 
@@ -1071,88 +511,74 @@ interface ClaimerResource {
 |-------|---------------|------|
 | `INVALID_PARAMETER` | 400 | リクエストパラメータが不正 |
 | `INVALID_HEADER` | 400 | リクエストヘッダーが不正 |
+| `BAD_REQUEST` | 400 | リクエストが不正 |
+| `INVALID_SUBMISSION` | 400 | Presentation Submissionが不正 |
 | `NOT_FOUND` | 404 | リソースが見つからない |
 | `EXPIRED` | 410 | リソースが期限切れ |
-| `DUPLICATED_ERROR` | 409 | 重複エラー |
-| `CONFLICT` | 409 | リソースの競合（`instance`フィールドに既存リソースのパスを含む） |
-| `GONE` | 410 | リソースが削除済み |
 | `INTERNAL_ERROR` | 500 | サーバー内部エラー |
-| `UNSUPPORTED_CURVE` | 400 | サポートされていない楕円曲線 |
-| `KEY_DOES_NOT_MATCH` | 403 | 認証キーが一致しない |
-| `UNEXPECTED_ERROR` | 500 | 予期しないエラー |
 
 ---
 
-## 認証・認可
+## データフロー図
 
-### Bearerトークン認証
+### OID4VP完全フロー
 
-**対象エンドポイント**: `DELETE /database/claims/:id`
+```mermaid
+sequenceDiagram
+    participant Client as Web Client
+    participant Verifier as OID4VP Verifier
+    participant Wallet as Identity Wallet
+    participant DB as SQLite
 
-**ヘッダー**:
+    Note over Client,DB: 1. Authorization Request生成
+    Client->>Verifier: POST /oid4vp/auth-request
+    Verifier->>DB: INSERT sessions (state=started)
+    Verifier->>DB: INSERT requests
+    Verifier->>DB: INSERT presentation_definitions
+    Verifier-->>Client: OID4VP URI + Set-Cookie
 
+    Note over Client,DB: 2. Wallet側のRequest Object取得
+    Wallet->>Verifier: GET /oid4vp/request?id=xxx
+    Verifier->>DB: SELECT requests WHERE id=xxx
+    Verifier-->>Wallet: Request Object
+
+    Wallet->>Verifier: GET /oid4vp/presentation-definition?id=yyy
+    Verifier->>DB: SELECT presentation_definitions WHERE id=yyy
+    Verifier-->>Wallet: Presentation Definition
+
+    Note over Client,DB: 3. VP Token提出
+    Wallet->>Verifier: POST /oid4vp/responses (vp_token)
+    Verifier->>Verifier: VP Token検証
+    Verifier->>DB: UPDATE sessions (state=consumed, vp_token=...)
+    Verifier->>DB: INSERT response_codes
+    Verifier-->>Wallet: redirect_uri + response_code
+
+    Note over Client,DB: 4. Response Code交換
+    Client->>Verifier: POST /response-code/exchange?response_code=zzz
+    Verifier->>DB: SELECT response_codes WHERE code=zzz
+    Verifier->>DB: UPDATE response_codes SET used=1
+    Verifier->>DB: UPDATE sessions (credential_data=...)
+    Verifier-->>Client: Credential Data + Set-Cookie
+
+    Note over Client,DB: 5. データ確定
+    Client->>Verifier: POST /oid4vp/comment/confirm
+    Verifier->>DB: UPDATE sessions (state=committed)
+    Verifier->>DB: UPDATE post_states (value=committed)
+    Verifier-->>Client: {id: claim_id} + Clear Session
 ```
-Authorization: Bearer <id_token>
-```
-
-**検証プロセス**:
-1. Authorizationヘッダーから`Bearer`トークンを抽出
-2. Claimの`claimer_id`を取得
-3. Claimerの`id_token`と比較
-4. 一致しない場合は`403 KEY_DOES_NOT_MATCH`エラー
-
-### セッション認証
-
-**対象エンドポイント**: OID4VP API（`/oid4vp/comment/*`, `/oid4vp/response-code/exchange`）
-
-**セッション設定**:
-
-```typescript
-app.keys = [process.env.OID4VP_COOKIE_SECRET];
-app.use(session({
-  maxAge: 60 * 60 * 1000,  // 1時間
-  signed: true,
-  httpOnly: true,
-  secure: NODE_ENV !== 'local',
-  sameSite: 'none'
-}, app));
-```
-
-**セッションフィールド**:
-- `request_id`: リクエストID
-- `transaction_id`: トランザクションID（削除用）
 
 ---
 
-## CORS設定
+## 環境変数
 
-### BOOL_NODE
-
-```typescript
-cors({
-  origin: process.env.APP_HOST,        // 特定オリジンのみ
-  allowMethods: ['POST', 'OPTIONS']    // POSTとOPTIONSのみ
-})
-```
-
-### API_NODE
-
-```typescript
-cors({
-  origin: '*',                         // 全オリジン許可
-  allowMethods: ['GET']                // GETのみ
-})
-```
-
-### VERIFIER_NODE
-
-```typescript
-cors({
-  origin: process.env.APP_HOST,        // 特定オリジンのみ
-  allowMethods: ['POST', 'GET'],       // POSTとGET
-  credentials: true                    // Cookie送信を許可
-})
-```
+| 変数名 | 説明 | デフォルト |
+|-------|------|-----------|
+| `OID4VP_REQUEST_HOST` | OID4VP URIスキームのホスト | `oid4vp://localhost` |
+| `OID4VP_RESPONSE_URI` | Response EndpointのURI | `http://localhost:3000/oid4vp/responses` |
+| `OID4VP_COOKIE_SECRET` | Cookieの署名キー | （必須） |
+| `OID4VP_VERIFIER_AUTH_RESPONSE_LIMIT` | VP Tokenのサイズ制限 | `1mb` |
+| `APP_HOST` | CORSで許可するオリジン | （必須） |
+| `NODE_ENV` | 実行環境（`local`/`production`） | `local` |
 
 ---
 
@@ -1160,7 +586,7 @@ cors({
 
 ### GET /health-check
 
-すべてのノードで利用可能なヘルスチェックエンドポイント。
+アプリケーションの稼働状態を確認します。
 
 **リクエスト**:
 
@@ -1176,10 +602,12 @@ GET /health-check HTTP/1.1
 
 ## まとめ
 
-boolcheck APIは、3つのノードタイプが協調して動作する設計になっています：
+OID4VP Verifier APIは、OpenID for Verifiable Presentationsプロトコルに準拠した単一ノードアーキテクチャで実装されています：
 
-1. **BOOL_NODE**: 更新系APIとAdmin APIを提供。書き込み権限を持ち、OrbitDBへのデータ永続化を担当。
-2. **API_NODE**: 参照系APIを提供。BOOL_NODEから同期したデータをSQLiteでクエリし、高速な参照機能を提供。
-3. **VERIFIER_NODE**: OID4VP APIを提供。アイデンティティウォレットとの連携により、検証可能なクレームを受け取りBOOL_NODEに送信。
+- **純粋なVerifier実装**: Identity Walletから提示されるVCを要求・検証
+- **SQLiteベースのセッション管理**: 一時的なセッションデータと検証済みクレデンシャルを保存
+- **完全なOID4VPフロー**: Authorization Request生成からVP Token検証、データ確定まで
+- **セキュアな設計**: JWT署名検証、X.509証明書チェーン検証、Cookie-basedセッション
+- **RESTful API**: 適切なHTTPメソッド、ステータスコード、エラーハンドリング
 
-各APIはREST原則に従い、適切なHTTPメソッド、ステータスコード、エラーハンドリングを実装しています。
+本APIは、DIF Presentation Exchange、OpenID4VP、SD-JWT等の標準仕様に準拠しています。
