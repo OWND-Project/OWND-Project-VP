@@ -10,15 +10,7 @@ import ellipticJwk, {
 } from "elliptic-jwk";
 import { faker } from "@faker-js/faker";
 
-import { getFQDN } from "../src/utils/url-util.js";
 import { issueJwt, issueSdJwt } from "../src/helpers/jwt-helper.js";
-import {
-  AffiliationDocument,
-  ClaimDocument,
-  ClaimerDocument,
-  ImageDocument,
-  UrlDocument,
-} from "../src/usecases/types.js";
 import { toJwkThumbprintUri } from "../src/oid4vp/jwk-util.js";
 import {
   CERT_PEM_POSTAMBLE,
@@ -186,74 +178,6 @@ export const getClaimJwt = async (payload: any) => {
   //   .setExpirationTime("2h")
   //   .sign(privateKey);
   return await issueJwt({ alg: "ES256" }, payload, privateJwk);
-};
-
-export const createImage = (format: string = "png") => {
-  const image: ImageDocument = {
-    url: faker.image.urlPlaceholder({ format }),
-    type: format,
-    height: faker.number.int(),
-    width: faker.number.int(),
-    alt: faker.string.alpha(10),
-  };
-  return image;
-};
-
-export const createClaimer = (opt: Partial<ClaimerDocument> = {}) => {
-  const claimer: ClaimerDocument = {
-    id: opt.id ?? faker.string.uuid(),
-    id_token: opt.id_token ?? faker.string.alpha(),
-    sub: opt.sub ?? faker.string.uuid(),
-    icon: opt.icon ?? faker.image.dataUri({ type: "svg-base64" }),
-    created_at: opt.created_at ?? faker.date.past().toISOString(),
-  };
-  return claimer;
-};
-
-export const createAffiliation = (opt: Partial<AffiliationDocument> = {}) => {
-  const affiliation: AffiliationDocument = {
-    id: opt.id ?? faker.string.uuid(),
-    claimer_id: opt.claimer_id ?? faker.string.uuid(),
-    claimer_sub: opt.claimer_sub ?? faker.string.uuid(),
-    organization: opt.organization ?? faker.string.alpha(10),
-    created_at: opt.created_at ?? faker.date.past().toISOString(),
-  };
-  return affiliation;
-};
-
-export const createUrl = (opt: Partial<UrlDocument> = {}) => {
-  const url = opt.url ?? faker.internet.url();
-  const urlDoc: UrlDocument = {
-    id: faker.string.uuid(),
-    url,
-    domain: getFQDN(url) || "",
-    title: opt.title ?? faker.string.alpha(10),
-    content_type: opt.content_type ?? "text/html",
-    description: opt.description ?? faker.string.alpha(20),
-    image: opt.image ?? "",
-    created_at: opt.created_at ?? faker.date.past().toISOString(),
-  };
-  return urlDoc;
-};
-
-export const createClaim = (opt: Partial<ClaimDocument> = {}) => {
-  const claim: ClaimDocument = {
-    id: faker.string.uuid(),
-    url: opt.url ?? faker.internet.url(),
-    claimer_id: opt.claimer_id ?? faker.string.uuid(),
-    affiliation_id: opt.affiliation_id ?? faker.string.uuid(),
-    comment: opt.comment ?? faker.string.alpha(10),
-    created_at: opt.created_at ?? faker.date.past().toISOString(),
-  };
-  return claim;
-};
-
-export const generatePaths = () => {
-  const ipfsPath = generateTemporaryPath("ipfs", "blocks");
-  const orbitdbPath = generateTemporaryPath("orbitdb");
-  const keystorePath = generateTemporaryPath("keystore");
-
-  return { ipfsPath, orbitdbPath, keystorePath };
 };
 
 export const extractPublicKeyFromX5c = async (jwt: string, alg: string) => {
