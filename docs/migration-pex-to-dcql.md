@@ -315,9 +315,9 @@ const extractCredentialFromVpToken = async <T, U>(
 | 5.2 | Response Endpoint から PS 削除 | ✅ 完了 | 2025-11-18 |
 | 5.3 | Verifier から descriptor 処理削除 | ✅ 完了 | 2025-11-18 |
 | 5.4 | Verify から descriptor_map 削除 | ✅ 完了 | 2025-11-18 |
-| 6.1 | VP Token 直接抽出実装 | ⬜ 未着手 | - |
-| 6.2 | Interactor 更新 | ⬜ 未着手 | - |
-| 6.3 | Credential Processor 更新 | ⬜ 未着手 | - |
+| 6.1 | VP Token 直接抽出実装 | ✅ 完了 | 2025-11-18 |
+| 6.2 | Interactor 更新 | ✅ 完了 | 2025-11-18 |
+| 6.3 | Credential Processor 更新 | ✅ 完了 | 2025-11-18 |
 | 7 | テスト修正 | ⬜ 未着手 | - |
 | 8 | ドキュメント更新 | ⬜ 未着手 | - |
 

@@ -1,4 +1,4 @@
-import { SDJWT, SDJWTPayload } from "@meeco/sd-jwt";
+import { SDJWT, SDJWTPayload, decodeSDJWT } from "@meeco/sd-jwt";
 import { decodeJwt } from "jose";
 
 import { Result } from "../../tool-box/index.js";
@@ -16,6 +16,78 @@ import getLogger from "../../services/logging-service.js";
 
 const logger = getLogger();
 
+/**
+ * Extract SD-JWT credential directly from VP Token (DCQL flow)
+ * @param vpToken - VP Token string or array
+ * @param nonce - Expected nonce value
+ * @returns Affiliation JWT and icon if successful
+ */
+export const extractCredentialFromVpToken = async (
+  vpToken: string | string[],
+  nonce: string,
+): Promise<Result<{ affiliation?: string; icon?: string }, NotSuccessResult>> => {
+  try {
+    // Handle VP Token (can be string or array in DCQL)
+    const token = Array.isArray(vpToken) ? vpToken[0] : vpToken;
+
+    if (!token) {
+      logger.info('VP Token is empty');
+      return { ok: false, error: { type: "INVALID_PARAMETER" } };
+    }
+
+    // Decode SD-JWT
+    const decoded = decodeSDJWT(token);
+
+    // Verify key binding JWT contains correct nonce
+    if (!decoded.kbJwt) {
+      logger.info('Key binding JWT is missing');
+      return { ok: false, error: { type: "INVALID_PARAMETER" } };
+    }
+
+    const kbPayload = decodeJwt<{ nonce: string }>(decoded.kbJwt);
+    if (kbPayload.nonce !== nonce) {
+      logger.info(`Nonce mismatch: expected ${nonce}, got ${kbPayload.nonce}`);
+      return { ok: false, error: { type: "INVALID_PARAMETER" } };
+    }
+
+    // Verify SD-JWT signature
+    const env = process.env.ENVIRONMENT;
+    const verifyResult = await verifySdJwt(token, {
+      skipVerifyChain: env !== "prod",
+    });
+
+    if (!verifyResult.ok) {
+      logger.info(`SD-JWT verification failed`);
+      return { ok: false, error: { type: "INVALID_PARAMETER" } };
+    }
+
+    // Extract icon from disclosures
+    let icon: string | undefined = undefined;
+    if (decoded.disclosures) {
+      decoded.disclosures.forEach((disclosure: any) => {
+        if (disclosure.key === "portrait") {
+          icon = disclosure.value;
+        }
+      });
+    }
+
+    return {
+      ok: true,
+      payload: {
+        affiliation: token,
+        icon
+      }
+    };
+  } catch (err) {
+    logger.error(`Error extracting credential from VP Token: ${err}`);
+    return { ok: false, error: { type: "INVALID_PARAMETER" } };
+  }
+};
+
+/**
+ * @deprecated Use extractCredentialFromVpToken instead (DCQL flow)
+ * This PEX-based processor will be removed in a future version
+ */
 export const processCredential2 = async (
   verifier: Verifier,
   inputDescriptorId: string,

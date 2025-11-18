@@ -18,16 +18,20 @@ import {
   PostStateRepository,
   SessionRepository,
 } from "./oid4vp-repository.js";
-import {
-  INPUT_DESCRIPTOR_AFFILIATION,
-  INPUT_DESCRIPTOR_ID2,
-  submissionRequirementAffiliation,
-} from "./internal/input-descriptor.js";
+// Deprecated imports - kept for backward compatibility
+// import {
+//   INPUT_DESCRIPTOR_AFFILIATION,
+//   INPUT_DESCRIPTOR_ID2,
+//   submissionRequirementAffiliation,
+// } from "./internal/input-descriptor.js";
 import {
   handleEndpointError,
   handleRequestError,
 } from "./internal/error-handlers.js";
-import { processCredential2 } from "./internal/credential2-processor.js";
+import {
+  // processCredential2, // Deprecated - using extractCredentialFromVpToken instead
+  extractCredentialFromVpToken,
+} from "./internal/credential2-processor.js";
 import { NotSuccessResult } from "../types/app-types.js";
 import { certificateStr2Array } from "../tool-box/x509/x509.js";
 
@@ -94,28 +98,36 @@ export const initOID4VPInteractor = (
       expiredIn: Env().expiredIn.requestAtResponseEndpoint,
     });
 
-    // generate presentation definition for affiliation credential only
-    const pd = await verifier.generatePresentationDefinition(
-      [INPUT_DESCRIPTOR_AFFILIATION],
-      [submissionRequirementAffiliation],
-      "所属証明の提示",
-      "身元を証明するためのクレデンシャルを提示します",
-    );
+    // Generate DCQL query for affiliation credential
+    const dcqlQuery = verifier.generateDcqlQuery([
+      {
+        id: "affiliation_credential",
+        format: "vc+sd-jwt",
+        meta: {
+          vct_values: ["OrganizationalAffiliationCertificate"],
+        },
+        claims: [
+          { path: ["organization_name"] },
+          { path: ["family_name"] },
+          { path: ["given_name"] },
+          { path: ["portrait"] },
+        ],
+      },
+    ]);
+
     const clientIdScheme = Env().clientIdScheme;
     const f = async () => {
       if (clientIdScheme === "x509_san_dns") {
-        const requestUri = `${Env().requestUri}?id=${request.id}&presentationDefinitionId=${pd.id}`;
+        const requestUri = `${Env().requestUri}?id=${request.id}`;
         return { clientId, requestUri };
       } else {
-        const presentationDefinitionUri =
-          Env().presentationDefinitionUri + `?id=${pd.id}`;
         const opts: GenerateRequestObjectOptions = {
           responseType,
           responseMode: "direct_post",
           clientIdScheme,
           responseUri,
           clientMetadata: getClientMetadata(),
-          presentationDefinitionUri,
+          dcqlQuery, // Use DCQL instead of Presentation Definition
         };
 
         // start vp request
@@ -135,28 +147,40 @@ export const initOID4VPInteractor = (
     };
   };
 
+  /**
+   * @deprecated PEX-related method. DCQL flow doesn't use Presentation Definition endpoint.
+   */
   const getRequestObject = async (
     requestId: string,
     presentationDefinitionId: string,
   ): Promise<Result<string, NotSuccessResult>> => {
     const request = await responseEndpoint.getRequest(requestId);
-    const presentationDefinition = await verifier.getPresentationDefinitionMap(
-      presentationDefinitionId,
-    );
 
-    if (!request || !presentationDefinition) {
+    if (!request) {
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
     }
 
     const responseType = "vp_token id_token";
     const clientIdScheme = Env().clientIdScheme;
+
+    // Generate DCQL query instead of using Presentation Definition
+    const dcqlQuery = verifier.generateDcqlQuery([
+      {
+        id: "affiliation_credential",
+        format: "vc+sd-jwt",
+        meta: {
+          vct_values: ["OrganizationalAffiliationCertificate"],
+        },
+      },
+    ]);
+
     const opts: GenerateRequestObjectOptions = {
       responseType,
       responseMode: "direct_post",
       clientIdScheme,
       responseUri: responseUri,
       clientMetadata: getClientMetadata(),
-      presentationDefinition,
+      dcqlQuery, // Use DCQL instead of Presentation Definition
     };
 
     // start vp request
@@ -178,15 +202,15 @@ export const initOID4VPInteractor = (
   };
 
   /**
-   *
+   * @deprecated PEX-related method. DCQL flow doesn't use Presentation Definition.
    * @param presentationDefinitionId
    */
   const getPresentationDefinition = async (
     presentationDefinitionId: string,
   ) => {
-    return await verifier.getPresentationDefinitionMap(
-      presentationDefinitionId,
-    );
+    // Return null since Presentation Definition is not used in DCQL flow
+    logger.warn('getPresentationDefinition called but PEX is deprecated. Returning null.');
+    return null;
   };
 
   /**
@@ -264,16 +288,11 @@ export const initOID4VPInteractor = (
     // id token (SIOPv2 validation removed - use standard OID4VP validation)
     const { idToken } = payload;
 
-    logger.info("processCredential2 start");
-    // Process affiliation credential
-    const cred = await processCredential2(
-      verifier,
-      INPUT_DESCRIPTOR_ID2,
-      payload,
-      nonce,
-    );
+    logger.info("extractCredentialFromVpToken start");
+    // Process affiliation credential using DCQL flow (direct VP Token extraction)
+    const cred = await extractCredentialFromVpToken(payload.vpToken, nonce);
     if (!cred.ok) {
-      logger.info(`credential is not ok : ${JSON.stringify(cred.error)}`);
+      logger.info(`credential extraction failed : ${JSON.stringify(cred.error)}`);
       await updateState2InvalidSubmission(requestId);
       return { ok: false, error: cred.error };
     }
