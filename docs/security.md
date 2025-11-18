@@ -866,37 +866,10 @@ npm audit fix
 - Dependabotを使用して自動PR作成
 - GitHub Actionsで定期的なセキュリティスキャン
 
-### レート制限（将来的な改善）
+### 将来的な改善
 
-**実装例**:
-```typescript
-import rateLimit from "koa-ratelimit";
-import Redis from "ioredis";
-
-const limiter = rateLimit({
-  driver: "redis",
-  db: new Redis(),
-  duration: 60000,        // 1分
-  max: 100,               // 100リクエスト
-  errorMessage: "Too many requests",
-});
-
-app.use(limiter);
-```
-
-### セキュリティヘッダー（推奨）
-
-**実装例**:
-```typescript
-app.use(async (ctx, next) => {
-  ctx.set("X-Content-Type-Options", "nosniff");
-  ctx.set("X-Frame-Options", "DENY");
-  ctx.set("X-XSS-Protection", "1; mode=block");
-  ctx.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-  ctx.set("Content-Security-Policy", "default-src 'self'");
-  await next();
-});
-```
+- **レート制限**: koa-ratelimitとRedisを使用したAPI呼び出し制限
+- **セキュリティヘッダー**: X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security等の設定
 
 ## 10. セキュリティ監査
 
