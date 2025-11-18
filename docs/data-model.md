@@ -13,9 +13,8 @@ OID4VP Verifierシステムは、SQLiteデータベースを使用してOID4VP�
 ├─────────────────────────────────────────────────────┤
 │  Tables:                                            │
 │  - sessions          (OID4VP session management)    │
-│  - requests          (VP request metadata)          │
+│  - requests          (VP request metadata + DCQL)   │
 │  - response_codes    (Authorization response codes) │
-│  - presentation_definitions (PD storage)            │
 │  - post_states       (Processing state tracking)    │
 └─────────────────────────────────────────────────────┘
 ```
@@ -203,59 +202,16 @@ interface AuthResponsePayload {
 
 ---
 
-### 4. presentation_definitions テーブル
+### 4. ~~presentation_definitions テーブル~~ (廃止)
 
-Presentation Definitionを保存します。
+**OID4VP 1.0 (DCQL)への移行に伴い廃止されました。**
 
-#### スキーマ
-
-```sql
-CREATE TABLE presentation_definitions (
-  id TEXT PRIMARY KEY,               -- Presentation Definition ID
-  definition TEXT NOT NULL,          -- Presentation Definition (JSON)
-  created_at INTEGER NOT NULL        -- 作成日時
-);
-
-CREATE INDEX idx_presentation_definitions_created_at ON presentation_definitions(created_at);
-```
-
-#### フィールド説明
-
-| フィールド | 型 | NULL許可 | 説明 |
-|-----------|-----|---------|------|
-| `id` | TEXT | NO | Presentation Definitionの一意識別子 |
-| `definition` | TEXT | NO | Presentation Definition全体 (JSON文字列) |
-| `created_at` | INTEGER | NO | 作成時刻 |
-
-#### Presentation Definition構造
-
-```typescript
-interface PresentationDefinition {
-  id: string;
-  input_descriptors: InputDescriptor[];
-  format?: FormatDesignation;
-}
-
-interface InputDescriptor {
-  id: string;
-  format?: FormatDesignation;
-  constraints?: Constraints;
-}
-```
-
-#### データ例
-
-```json
-{
-  "id": "pd_vp_example",
-  "definition": "{\"id\":\"pd_vp_example\",\"input_descriptors\":[...]}",
-  "created_at": 1700000000
-}
-```
+DCQL QueryはrequestsテーブルのdcqlQueryカラムに保存されるようになりました。
+Presentation Definition (PEX)は使用されません。
 
 ---
 
-### 5. post_states テーブル
+### 4. post_states テーブル
 
 処理状態の追跡を行います。
 
@@ -340,14 +296,6 @@ CREATE INDEX idx_post_states_value ON post_states(value);
 │ ...             │
 └─────────────────┘
 
-┌──────────────────────────┐
-│ presentation_definitions │
-│──────────────────────────│
-│ id (PK)                  │
-│ definition               │
-│ ...                      │
-└──────────────────────────┘
-
 ┌─────────────────┐
 │   post_states   │
 │─────────────────│
@@ -364,19 +312,15 @@ CREATE INDEX idx_post_states_value ON post_states(value);
 ### 1. Authorization Request生成時
 
 ```sql
--- 1. リクエスト作成
-INSERT INTO requests (id, response_type, created_at, expires_at)
-VALUES ('req_abc123', 'vp_token id_token', 1700000000, 1700000600);
+-- 1. リクエスト作成（DCQL Query含む）
+INSERT INTO requests (id, response_type, dcql_query, created_at, expires_at)
+VALUES ('req_abc123', 'vp_token id_token', '{"credentials":[...]}', 1700000000, 1700000600);
 
--- 2. Presentation Definition保存
-INSERT INTO presentation_definitions (id, definition, created_at)
-VALUES ('pd_vp_example', '{"id":"pd_vp_example",...}', 1700000000);
-
--- 3. セッション作成
+-- 2. セッション作成
 INSERT INTO sessions (id, request_id, state, created_at, expires_at)
 VALUES ('session_xyz', 'req_abc123', 'started', 1700000000, 1700000600);
 
--- 4. 処理状態作成
+-- 3. 処理状態作成
 INSERT INTO post_states (id, value, created_at, expires_at)
 VALUES ('req_abc123', 'started', 1700000000, 1700000600);
 ```
@@ -495,9 +439,8 @@ PRAGMA busy_timeout = 5000;
 // 複数操作をトランザクションでまとめる
 await db.run('BEGIN TRANSACTION');
 try {
-  await db.run('INSERT INTO requests ...');
+  await db.run('INSERT INTO requests ...');  // DCQL Query含む
   await db.run('INSERT INTO sessions ...');
-  await db.run('INSERT INTO presentation_definitions ...');
   await db.run('COMMIT');
 } catch (error) {
   await db.run('ROLLBACK');
@@ -512,9 +455,8 @@ try {
 ### 自動削除タイミング
 
 - **セッション**: 有効期限切れ後、自動削除
-- **リクエスト**: 有効期限切れ後、自動削除
+- **リクエスト**: 有効期限切れ後、自動削除（DCQL Query含む）
 - **Response Code**: 有効期限切れ後、自動削除
-- **Presentation Definition**: 参照されなくなった時点で削除可能
 - **Post States**: 有効期限切れ後、自動削除
 
 ### デフォルト有効期限
