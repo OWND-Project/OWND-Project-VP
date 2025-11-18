@@ -57,15 +57,10 @@
        │                                                     │
        │ 8. POST /oid4vp/response-code/exchange             │
        │    ?response_code=...                              │
+       │    (VP Token検証成功後、自動的にcommitted状態へ)   │
        │───────────────────────────────────────────────────>│
        │                                                     │
-       │   { claim: { url, claimer, comment } }             │
-       │<───────────────────────────────────────────────────│
-       │                                                     │
-       │ 9. POST /oid4vp/comment/confirm                    │
-       │───────────────────────────────────────────────────>│
-       │                                                     │
-       │   { id: "claim789..." }                            │
+       │   { claimer: { id_token, organization, icon } }    │
        │<───────────────────────────────────────────────────│
        │                                                     │
 ```
@@ -85,7 +80,7 @@
 │  │  - generateAuthRequest()                 │   │
 │  │  - receiveAuthResponse()                 │   │
 │  │  - exchangeAuthResponse()                │   │
-│  │  - confirmComment()                      │   │
+│  │  - getStates()                           │   │
 │  └────────┬─────────────────────────────────┘   │
 │           │                                      │
 │           ├──────────┬──────────┬───────────┐   │
@@ -99,7 +94,6 @@
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
 │  │  Credential Processors                   │   │
-│  │  - credential1-processor.ts (Claim)      │   │
 │  │  - credential2-processor.ts (Affiliation)│   │
 │  │  - input-descriptor.ts                   │   │
 │  └──────────────────────────────────────────┘   │
@@ -126,7 +120,7 @@ OID4VP VerifierはSQLiteデータベースを使用してOID4VP関連データ�
 | `requests` | VP requestメタデータ（response_type, transaction_idなど） |
 | `response_codes` | Authorization response codes（payload, usedフラグ） |
 | `presentation_definitions` | Presentation Definition（JSON形式） |
-| `post_states` | 認証フローの状態追跡（started/consumed/committed/expiredなど） |
+| `post_states` | 認証フローの状態追跡（started/committed/expired/invalid_submissionなど） |
 
 ## 認証フロー詳細
 
@@ -138,9 +132,7 @@ OID4VP VerifierはSQLiteデータベースを使用してOID4VP関連データ�
 
 ```typescript
 // src/usecases/oid4vp-interactor.ts
-const generateAuthRequest = async (payload, presenter) => {
-  const { url, comment, boolValue } = payload;
-
+const generateAuthRequest = async (presenter) => {
   // 1. トランザクション開始（Response Endpoint）
   const request = await responseEndpoint.initiateTransaction({
     responseType: "vp_token id_token",
@@ -151,13 +143,10 @@ const generateAuthRequest = async (payload, presenter) => {
 
   // 2. Presentation Definition生成
   const pd = await verifier.generatePresentationDefinition(
-    [
-      inputDescriptorClaim(url, comment, boolValue),
-      INPUT_DESCRIPTOR_AFFILIATION,
-    ],
-    [submissionRequirementClaim, submissionRequirementAffiliation],
-    "真偽コメントに署名します",
-    "投稿に信頼性を持たせるために身元を証明するクレデンシャルと共に真偽表明を行います",
+    [INPUT_DESCRIPTOR_AFFILIATION],
+    [submissionRequirementAffiliation],
+    "所属証明の提示",
+    "身元を証明するためのクレデンシャルを提示します",
   );
 
   // 3. Verifierリクエスト開始
@@ -173,7 +162,10 @@ const generateAuthRequest = async (payload, presenter) => {
     },
   });
 
-  // 4. レスポンス返却
+  // 4. ポストステート作成
+  await stateRepository.putState(request.id, "started");
+
+  // 5. レスポンス返却
   return presenter(authRequest, request.id, request.transactionId);
 };
 ```
@@ -208,17 +200,6 @@ const generateAuthRequest = async (payload, presenter) => {
      "id": "pd-789",
      "input_descriptors": [
        {
-         "id": "id1",
-         "format": { "vc+sd-jwt": {} },
-         "constraints": {
-           "fields": [
-             { "path": ["$.vc.credentialSubject.url"], "filter": { "const": "https://example.com" } },
-             { "path": ["$.vc.credentialSubject.comment"], "filter": { "const": "..." } },
-             { "path": ["$.vc.credentialSubject.bool_value"], "filter": { "const": 1 } }
-           ]
-         }
-       },
-       {
          "id": "Affiliation",
          "format": { "vc+sd-jwt": {} },
          "constraints": {
@@ -229,7 +210,6 @@ const generateAuthRequest = async (payload, presenter) => {
        }
      ],
      "submission_requirements": [
-       { "rule": "all", "from": "A" },
        { "rule": "pick", "count": 1, "from": "B" }
      ]
    }
@@ -374,45 +354,31 @@ const exchangeAuthResponse = async (responseCode, transactionId, presenter) => {
     presentationSubmission: response.payload.presentationSubmission,
   };
 
-  // 4. Credential1（Claim）処理
-  const credential1 = await processCredential1(
-    verifier,
-    INPUT_DESCRIPTOR_ID1,
-    authResponse,
-    request.nonce,
-  );
-  if (!credential1.ok) return { ok: false, error: credential1.error };
-
-  // 5. Credential2（Affiliation）処理（任意）
-  const credential2 = await processCredential2(
+  // 4. Affiliation Credential処理（任意）
+  const credential = await processCredential2(
     verifier,
     INPUT_DESCRIPTOR_AFFILIATION,
     authResponse,
     request.nonce,
   );
 
-  // 6. Claimer情報抽出
-  const claimerInfo = extractClaimerInfo(authResponse, credential2);
+  // 5. ID Token & Claimer情報抽出
+  const idToken = authResponse.idToken;
+  const claimerInfo = extractClaimerInfo(authResponse, credential);
 
-  // 7. URL情報取得
-  const urlResult = await callGetUrlMetadata(credential1.payload.decoded.vc.credentialSubject.url);
-
-  // 8. セッション保存
+  // 6. セッション保存
   await saveSession({
     id: response.requestId,
     idToken: claimerInfo.id_token,
-    claimJwt: credential1.payload.raw,
-    affiliationJwt: credential2?.payload?.raw,
+    affiliationJwt: credential?.payload?.raw,
   });
 
-  // 9. ポストステート更新
-  await updatePostState(response.requestId, "consumed");
+  // 7. VP Token検証成功時、自動的にcommitted状態に遷移
+  await updatePostState(response.requestId, "committed");
 
-  // 10. レスポンス返却
+  // 8. レスポンス返却
   return presenter(
     response.requestId,
-    credential1.payload.raw,
-    urlResult,
     claimerInfo,
   );
 };
@@ -421,123 +387,53 @@ const exchangeAuthResponse = async (responseCode, transactionId, presenter) => {
 **レスポンス**:
 ```json
 {
-  "url": "https://example.com/article/123",
   "claimer": {
     "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
     "sub": "user@example.com",
     "icon": "https://example.com/icon.png",
     "organization": "Example Org"
-  },
-  "comment": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-### 5. クレーム確定（confirmComment）
-
-**エンドポイント**: `POST /oid4vp/comment/confirm`
-
-**処理フロー**:
-
-```typescript
-const confirmComment = async (requestId, presenter) => {
-  // 1. セッション取得
-  const session = await getSession(requestId);
-  if (!session) return { ok: false, error: { type: "NOT_FOUND" } };
-
-  // 2. URL取得
-  const claimJwt = decodeJwt(session.claimJwt);
-  const url = claimJwt.vc.credentialSubject.url;
-
-  // 3. Claimer情報抽出
-  const claimerInfo = extractClaimerSub(session.idToken);
-  const affiliationInfo = session.affiliationJwt
-    ? extractOrgInfo(session.affiliationJwt)
-    : undefined;
-
-  // 4. データ永続化（アプリケーション固有の処理）
-  const result = { id: "claim_abc123" }; // 実装依存
-
-  // 5. ポストステート更新
-  await updatePostState(requestId, "committed");
-
-  // 6. セッション状態を committed に更新
-  await updateSessionState(requestId, "committed");
-
-  return presenter(result.id);
-};
-```
-
-**レスポンス**:
-```json
-{
-  "id": "claim789..."
+  }
 }
 ```
 
 ## VP Token検証プロセス
 
-### Credential1処理（Claim）
-
-**ファイル**: `src/usecases/internal/credential1-processor.ts`
+### Affiliation Credential処理
 
 **処理フロー**:
 
 ```typescript
-export const processCredential1 = async (
-  verifier,
-  inputDescriptorId,
-  authResponse,
-  nonce,
-) => {
-  // 1. Descriptor Map取得
-  const descriptor = await verifier.getDescriptor(inputDescriptorId, authResponse);
-  if (!descriptor.ok) return descriptor;
+// 1. Descriptor Map取得
+const descriptor = await verifier.getDescriptor(
+  INPUT_DESCRIPTOR_AFFILIATION,
+  authResponse
+);
+if (!descriptor.ok) return descriptor;
 
-  // 2. Presentation取得・検証
-  const presentation = await verifier.getPresentation(
-    descriptor.payload.descriptorMap,
-    verifyVpFunction,  // VP署名検証
-  );
-  if (!presentation.ok) return presentation;
+// 2. Presentation取得・検証
+const presentation = await verifier.getPresentation(
+  descriptor.payload.descriptorMap,
+  verifyVpFunction,  // VP署名検証
+);
+if (!presentation.ok) return presentation;
 
-  // 3. Nonce検証
-  if (presentation.payload.vp.decoded.nonce !== nonce) {
-    return { ok: false, error: { type: "INVALID_PARAMETER" } };
-  }
+// 3. Nonce検証
+if (presentation.payload.vp.decoded.nonce !== nonce) {
+  return { ok: false, error: { type: "INVALID_PARAMETER" } };
+}
 
-  // 4. Credential取得・検証
-  const credential = await verifier.getCredential(
-    presentation.payload,
-    verifyFunction,  // VC署名検証 + X.509証明書チェーン検証
-  );
-  if (!credential.ok) return credential;
+// 4. Credential取得・検証
+const credential = await verifier.getCredential(
+  presentation.payload,
+  verifyFunction,  // VC署名検証 + X.509証明書チェーン検証
+);
+if (!credential.ok) return credential;
 
-  // 5. CredentialSubject抽出
-  const { decoded, raw } = credential.payload;
-  const { comment, boolValue } = decoded.vc.credentialSubject;
+// 5. CredentialSubject抽出（所属組織情報）
+const { decoded, raw } = credential.payload;
+const organization = decoded.vc.credentialSubject.organization;
 
-  return { ok: true, payload: { raw, decoded } };
-};
-```
-
-**VP Token検証関数**:
-
-```typescript
-// src/usecases/internal/credential1-processor.ts
-const verifyVpFunction = async (credential: string) => {
-  return await verifyVpForW3CVcDataV1<string>(credential);
-};
-```
-
-**VC検証関数**:
-
-```typescript
-const verifyFunction = async (credential: string) => {
-  const env = process.env.ENVIRONMENT;
-  return await verifyVcForW3CVcDataV1<TrueFalseComment>(credential, {
-    skipVerifyChain: env != "prod",  // 本番環境のみX.509チェーン検証
-  });
-};
+return { ok: true, payload: { raw, decoded } };
 ```
 
 ### 検証レイヤー
@@ -591,64 +487,21 @@ const decoded = decodeSDJWT(token);
 // }
 ```
 
-### CredentialSubject抽出
+### CredentialSubject抽出（Affiliation）
 
 ```typescript
-const claimJwt = decodeJwt(comment);
-const credentialSubject = claimJwt.vc.credentialSubject;
+const affiliationJwt = decodeJwt(token);
+const credentialSubject = affiliationJwt.vc.credentialSubject;
 // {
-//   url: "https://example.com/article/123",
-//   comment: "コメントテキスト",
-//   bool_value: 1  // 1: TRUE, 0: FALSE, 2: ELSE
+//   organization: "Example Organization"
 // }
 ```
 
 ## Input Descriptor定義
 
-### Claim用Input Descriptor
+### Affiliation用Input Descriptor
 
 **ファイル**: `src/usecases/internal/input-descriptor.ts`
-
-```typescript
-export const inputDescriptorClaim = (
-  url: string,
-  comment: string,
-  boolValue: number,
-): InputDescriptor => ({
-  id: "id1",
-  name: "TrueFalseComment",
-  purpose: "真偽コメントを検証します",
-  group: ["A"],
-  format: {
-    "vc+sd-jwt": {},
-  },
-  constraints: {
-    fields: [
-      {
-        path: ["$.vc.type"],
-        filter: {
-          type: "array",
-          contains: { const: "TrueFalseComment" },
-        },
-      },
-      {
-        path: ["$.vc.credentialSubject.url"],
-        filter: { const: url },
-      },
-      {
-        path: ["$.vc.credentialSubject.comment"],
-        filter: { const: comment },
-      },
-      {
-        path: ["$.vc.credentialSubject.bool_value"],
-        filter: { const: boolValue },
-      },
-    ],
-  },
-});
-```
-
-### Affiliation用Input Descriptor
 
 ```typescript
 export const INPUT_DESCRIPTOR_AFFILIATION: InputDescriptor = {
@@ -680,12 +533,6 @@ export const INPUT_DESCRIPTOR_AFFILIATION: InputDescriptor = {
 ### Submission Requirements
 
 ```typescript
-export const submissionRequirementClaim: SubmissionRequirement = {
-  name: "TrueFalseComment",
-  rule: "all",
-  from: "A",
-};
-
 export const submissionRequirementAffiliation: SubmissionRequirement = {
   name: "OrganizationVerifiableID",
   rule: "pick",
@@ -695,7 +542,6 @@ export const submissionRequirementAffiliation: SubmissionRequirement = {
 ```
 
 **意味**:
-- グループAのInput Descriptor（Claim）は**すべて必須**
 - グループBのInput Descriptor（Affiliation）は**1つ選択**（任意）
 
 ## セッション管理
@@ -705,8 +551,7 @@ export const submissionRequirementAffiliation: SubmissionRequirement = {
 ```typescript
 interface WaitCommitData extends EntityWithLifeCycle {
   data: {
-    idToken: string;           // Claimer ID Token
-    claimJwt: string;          // Claim SD-JWT
+    idToken: string;           // ID Token
     affiliationJwt?: string;   // Affiliation SD-JWT（任意）
   };
 }
@@ -717,10 +562,8 @@ interface WaitCommitData extends EntityWithLifeCycle {
 ```typescript
 type PostStateValue =
   | "started"              // 認証リクエスト生成済み
-  | "consumed"             // レスポンスコード交換済み
-  | "committed"            // クレーム確定済み
+  | "committed"            // VP Token検証成功（自動遷移）
   | "expired"              // セッション期限切れ
-  | "canceled"             // キャンセル済み
   | "invalid_submission";  // 無効な提出
 
 interface PostState extends EntityWithLifeCycle {
@@ -732,11 +575,9 @@ interface PostState extends EntityWithLifeCycle {
 ### ライフサイクル
 
 ```
-started → consumed → committed
-   ↓         ↓          ↓
-expired   expired    (session cleared)
+started → committed (VP Token検証成功時に自動遷移)
    ↓         ↓
-canceled  canceled
+expired   (session cleared)
 ```
 
 ## クライアントメタデータ
@@ -748,9 +589,9 @@ export const generateClientMetadata = (): ClientMetadata => ({
   vp_formats: {
     "vc+sd-jwt": {},
   },
-  client_name: process.env.OID4VP_CLIENT_METADATA_NAME || "boolcheck.com",
+  client_name: process.env.OID4VP_CLIENT_METADATA_NAME || "OID4VP Verifier",
   logo_uri: process.env.OID4VP_CLIENT_METADATA_LOGO_URI || "http://localhost/logo.png",
-  client_purpose: "真偽コメントに署名します",
+  client_purpose: "所属証明を検証します",
   policy_uri: process.env.OID4VP_CLIENT_METADATA_POLICY_URI,
   tos_uri: process.env.OID4VP_CLIENT_METADATA_TOS_URI,
 });
@@ -840,7 +681,7 @@ const handleDescriptorError = (error: DescriptorError): NotSuccessResult => {
 
 ## 完全なデータフロー
 
-### 詳細なOID4VPフロー（全30ステップ）
+### 詳細なOID4VPフロー（全24ステップ）
 
 ```mermaid
 sequenceDiagram
@@ -853,7 +694,7 @@ sequenceDiagram
     U->>F: 1. 認証開始ボタンクリック
     F->>V: 2. POST /oid4vp/auth-request
     V->>DB: 3. Presentation Definition保存
-    V->>DB: 4. Session作成 (state: started)
+    V->>DB: 4. PostState作成 (state: started)
     V->>F: 5. Authorization Request返却
     F->>U: 6. QRコード表示
 
@@ -871,20 +712,16 @@ sequenceDiagram
     V->>V: 16. VP Token検証
     V->>V: 17. VC検証 (X.509チェーン)
     V->>DB: 18. Response Code保存
-    V->>DB: 19. Session更新 (state: consumed)
-    V->>W: 20. Response Code返却
+    V->>W: 19. Response Code返却
 
-    W->>F: 21. リダイレクト
-    F->>V: 22. POST /oid4vp/response-code/exchange
-    V->>DB: 23. Response Code検証
-    V->>F: 24. Credential Data返却
+    W->>F: 20. リダイレクト
+    F->>V: 21. POST /oid4vp/response-code/exchange
+    V->>DB: 22. Response Code検証
+    V->>DB: 23. PostState更新 (state: committed - 自動)
+    V->>DB: 24. Session更新 & クリア
+    V->>F: 25. Credential Data返却
 
-    F->>U: 25. データ確認画面表示
-    U->>F: 26. 確認ボタンクリック
-    F->>V: 27. POST /oid4vp/comment/confirm
-    V->>DB: 28. Session更新 (state: committed)
-    V->>F: 29. 204 No Content
-    F->>U: 30. 完了画面表示
+    F->>U: 26. 完了画面表示
 ```
 
 ### セッション状態遷移
@@ -892,17 +729,14 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> started: POST /auth-request
-    started --> consumed: POST /responses (VP Token検証成功)
-    consumed --> committed: POST /comment/confirm
-    committed --> [*]: セッション完了
+    started --> committed: VP Token検証成功 (自動遷移)
+    committed --> [*]: セッション完了・クリア
 
     started --> expired: タイムアウト (10分)
-    consumed --> expired: タイムアウト (10分)
     expired --> [*]: クリーンアップ
 
-    started --> cancelled: POST /comment/cancel
-    consumed --> cancelled: POST /comment/cancel
-    cancelled --> [*]: セッション削除
+    started --> invalid_submission: VP Token検証失敗
+    invalid_submission --> [*]: セッション削除
 ```
 
 ## まとめ
@@ -913,8 +747,9 @@ OID4VP Verifierの実装は、以下の特徴を持ちます：
 2. **X.509ベース認証**: `x509_san_dns`スキームによるVerifier認証
 3. **SD-JWT対応**: Selective Disclosure JWTによる選択的開示
 4. **多段階検証**: Presentation → VP → VCの3段階検証
-5. **柔軟なInput Descriptor**: 必須・任意のクレデンシャルを柔軟に要求
-6. **セッション管理**: SQLiteベースのステートフル認証フロー
-7. **単一ノード構成**: シンプルな単一プロセスで動作
+5. **Affiliation Credential検証**: 組織所属証明の検証に特化
+6. **自動状態遷移**: VP Token検証成功時に自動的にcommitted状態へ遷移
+7. **セッション管理**: SQLiteベースのステートフル認証フロー
+8. **単一ノード構成**: シンプルな単一プロセスで動作
 
-この実装により、Identity Walletから信頼性の高い検証可能なクレデンシャルを安全に受け取り、SQLiteデータベースに保存することが可能になっています。
+この実装により、Identity Walletから所属組織を証明するクレデンシャルを安全に受け取り、検証することが可能になっています。

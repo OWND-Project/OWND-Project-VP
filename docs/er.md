@@ -10,13 +10,13 @@ erDiagram
     sessions {
         TEXT id PK "セッションID (UUID)"
         TEXT request_id UK "リクエストID"
-        TEXT state "状態 (started/consumed/committed/expired/canceled)"
+        TEXT state "状態 (started/committed/expired)"
         TEXT vp_token "受信したVP Token (JSON)"
         TEXT credential_data "クレデンシャルデータ (JSON)"
         INTEGER created_at "作成日時 (Unix timestamp)"
         INTEGER expires_at "有効期限"
         INTEGER consumed_at "VP Token受信日時"
-        INTEGER committed_at "データコミット日時"
+        INTEGER committed_at "VP Token検証成功時刻 (自動設定)"
     }
 
     requests {

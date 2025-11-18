@@ -391,34 +391,26 @@ await sessionRepository.putWaitCommitData(response.requestId, {
 return { ok: true, payload: presenter(response.requestId, credential.payload) };
 ```
 
-##### confirmComment()
+##### getStates()
 
 **シグネチャ**:
 ```typescript
-const confirmComment = async <T>(
+const getStates = async <T>(
   requestId: string,
-  presenter: (id: string) => T
-): Promise<Result<T, NotSuccessResult>>
+  presenter: PostStatePresenter<T>
+): Promise<T>
 ```
 
 **処理フロー**:
 ```typescript
-// 1. セッション取得
-const session = await sessionRepository.getSession(requestId);
-if (!session) {
-  return { ok: false, error: { type: "NOT_FOUND" } };
-}
+// 1. 状態取得
+const state = await stateRepository.getState(requestId);
 
-// 2. データ永続化（アプリケーション固有の処理）
-const result = { id: "claim_abc123" }; // 実装依存
-
-// 3. セッション状態更新
-await sessionRepository.updateState(requestId, "committed");
-await stateRepository.putState(requestId, "committed");
-
-// 4. Presenter変換
-return { ok: true, payload: presenter(result.id) };
+// 2. Presenter変換
+return presenter(state);
 ```
+
+**説明**: リクエストの現在の状態を取得します。状態はVP Token検証フローの進行を追跡します。
 
 **依存関係**:
 - `oid4vp/verifier.ts`: Verifier機能
@@ -658,11 +650,9 @@ export const initResponseEndpointDatastore = (db: Database): ResponseEndpointDat
 - `POST /oid4vp/auth-request`: Authorization Request生成
 - `GET /oid4vp/request`: Request Object取得
 - `GET /oid4vp/presentation-definition`: Presentation Definition取得
-- `POST /oid4vp/responses`: VP Token受信
+- `POST /oid4vp/responses`: VP Token受信 (VP Token検証成功後、自動的にcommitted状態へ遷移)
 - `POST /oid4vp/response-code/exchange`: Response Code交換
-- `POST /oid4vp/comment/confirm`: データ確定
-- `POST /oid4vp/comment/cancel`: キャンセル
-- `GET /oid4vp/comment/states`: 状態取得
+- `GET /oid4vp/states`: 状態取得
 
 #### Presenters
 
@@ -693,19 +683,24 @@ export const authResponsePresenter = (
 
 export const exchangeResponseCodePresenter = (
   requestId: string,
-  credentialData: any
+  claimer: {
+    sub: string;
+    id_token: string;
+    organization?: string;
+    icon?: string;
+  }
 ) => ({
   requestId,
-  claim: credentialData,
+  claimer: {
+    id_token: claimer.id_token,
+    sub: claimer.sub,
+    icon: claimer.icon,
+    organization: claimer.organization,
+  },
 });
 
-export const confirmCommentPresenter = (id: string) => ({
-  id,
-});
-
-export const postStatePresenter = (state: PostState) => ({
-  value: state.value,
-});
+export const postStatePresenter = (state: PostState | null) =>
+  state ? { value: state.value } : null;
 ```
 
 #### ErrorHandler

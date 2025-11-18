@@ -41,13 +41,13 @@ OID4VPセッションの状態管理を行います。
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,              -- セッションID (UUID)
   request_id TEXT UNIQUE NOT NULL,  -- リクエストID
-  state TEXT NOT NULL,              -- 状態 (started/consumed/committed/expired/canceled)
+  state TEXT NOT NULL,              -- 状態 (started/committed/expired)
   vp_token TEXT,                    -- 受信したVP Token (JSON)
   credential_data TEXT,             -- 抽出したクレデンシャルデータ (JSON)
   created_at INTEGER NOT NULL,      -- 作成日時 (Unix timestamp)
   expires_at INTEGER NOT NULL,      -- 有効期限 (Unix timestamp)
   consumed_at INTEGER,              -- VP Token受信日時
-  committed_at INTEGER              -- データコミット日時
+  committed_at INTEGER              -- データコミット日時 (VP Token検証成功時に自動設定)
 );
 
 CREATE INDEX idx_sessions_request_id ON sessions(request_id);
@@ -67,23 +67,19 @@ CREATE INDEX idx_sessions_state ON sessions(state);
 | `created_at` | INTEGER | NO | セッション作成時刻 (秒単位) |
 | `expires_at` | INTEGER | NO | セッション有効期限 (秒単位) |
 | `consumed_at` | INTEGER | YES | VP Token受信時刻 |
-| `committed_at` | INTEGER | YES | データコミット時刻 |
+| `committed_at` | INTEGER | YES | VP Token検証成功時刻 (自動設定) |
 
 #### 状態遷移
 
 ```
-started → consumed → committed
-   ↓         ↓          ↓
-expired  expired    expired
-   ↓         ↓
-canceled  canceled
+started → committed
+   ↓          ↓
+expired    expired
 ```
 
 - **started**: セッション開始、Authorization Request生成済み
-- **consumed**: VP Token受信、検証完了
-- **committed**: クレデンシャルデータ確定
+- **committed**: VP Token検証成功、クレデンシャルデータ確定 (自動遷移)
 - **expired**: 有効期限切れ
-- **canceled**: ユーザーによるキャンセル
 
 #### データ例
 
@@ -91,9 +87,9 @@ canceled  canceled
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "request_id": "req_abc123",
-  "state": "consumed",
+  "state": "committed",
   "vp_token": "{\"vp\":{\"verifiableCredential\":[...]}}",
-  "credential_data": "{\"idToken\":\"...\",\"claimJwt\":\"...\"}",
+  "credential_data": "{\"idToken\":\"...\",\"affiliationJwt\":\"...\"}",
   "created_at": 1700000000,
   "expires_at": 1700000600,
   "consumed_at": 1700000123,
@@ -291,10 +287,8 @@ CREATE INDEX idx_post_states_value ON post_states(value);
 #### 状態値 (PostStateValue)
 
 - `started`: 処理開始
-- `consumed`: VP Token受信完了
-- `committed`: データコミット完了
+- `committed`: VP Token検証成功、データコミット完了 (自動遷移)
 - `expired`: 有効期限切れ
-- `canceled`: キャンセル
 - `invalid_submission`: 不正な提出
 
 #### データ例
@@ -302,7 +296,7 @@ CREATE INDEX idx_post_states_value ON post_states(value);
 ```json
 {
   "id": "req_abc123",
-  "value": "consumed",
+  "value": "committed",
   "target_id": null,
   "created_at": 1700000000,
   "expires_at": 1700000600
@@ -401,9 +395,9 @@ SET state = 'consumed',
     consumed_at = 1700000123
 WHERE request_id = 'req_abc123';
 
--- 3. 処理状態更新
+-- 3. 処理状態を自動的にcommittedに更新
 UPDATE post_states
-SET value = 'consumed'
+SET value = 'committed'
 WHERE id = 'req_abc123';
 ```
 

@@ -33,19 +33,11 @@ Verifiable Presentationをリクエストするための認証リクエストを
 ```http
 POST /oid4vp/auth-request HTTP/1.1
 Content-Type: application/json
-
-{
-  "type": "post_comment",
-  "url": "https://example.com/article/123"
-}
 ```
 
 **リクエストボディ**:
 
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `type` | string | - | リクエストタイプ（デフォルト: `"post_comment"`） |
-| `url` | string | - | 対象URL（typeによっては必須） |
+リクエストボディは不要です。
 
 **レスポンス** (200 OK):
 
@@ -73,8 +65,8 @@ Content-Type: application/json
 | 400 | `INVALID_PARAMETER` | リクエストボディが不正 |
 
 **処理フロー**:
-1. Presentation Definitionを生成
-2. リクエストIDをSQLiteのsessionsテーブルに保存（状態: `started`）
+1. 所属証明クレデンシャル用のPresentation Definitionを生成
+2. post_statesテーブルに状態を保存（状態: `started`）
 3. Authorization Requestを生成
 4. セッションに`request_id`を設定
 5. OID4VP URIを返却
@@ -231,8 +223,8 @@ vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=%7B%22i
 2. X.509証明書チェーン検証（x5cヘッダーがある場合）
 3. Presentation Submissionの検証
 4. Descriptor Mapとの整合性検証
-5. ネストされたCredentialの検証
-6. セッション状態を`consumed`に更新
+5. 所属証明クレデンシャル(SD-JWT)の検証
+6. **VP Token検証成功後、自動的にcommitted状態に遷移**
 7. レスポンスコードを生成してresponse_codesテーブルに保存
 
 **エラーレスポンス**:
@@ -271,20 +263,21 @@ Cookie: koa.sess=...
 
 ```json
 {
-  "url": "https://example.com/article/123",
-  "claimer": {
-    "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "sub": "user@example.com",
-    "icon": "https://example.com/icon.png",
-    "organization": "Example Org"
-  },
-  "comment": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "sub": "",
+  "icon": "data:image/svg+xml;base64,...",
+  "organization": "eyJ0eXAiOiJzZCtqd3QiLCJhbGc..."
 }
 ```
 
 **レスポンスボディ**:
 
-レスポンスボディはリクエストタイプによって異なります。上記は`post_comment`タイプの例です。
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `id_token` | string | ID Token (JWT) |
+| `sub` | string | Subject識別子 (未使用) |
+| `icon` | string | アイコン画像 (Data URI) |
+| `organization` | string | 所属証明クレデンシャル (SD-JWT) |
 
 **セッション**:
 
@@ -294,9 +287,10 @@ Cookie: koa.sess=...
 **処理フロー**:
 1. レスポンスコードの有効性確認（response_codesテーブル）
 2. レスポンスコードを使用済みに設定（used=1）
-3. VP Tokenからクレデンシャルデータを抽出
+3. 所属証明クレデンシャル(SD-JWT)を検証・抽出
 4. データをsessions.credential_dataに保存
-5. クレデンシャルデータを返却
+5. **VP Token検証成功後、自動的にcommitted状態に遷移**
+6. クレデンシャルデータを返却
 
 **エラーレスポンス**:
 
@@ -308,90 +302,9 @@ Cookie: koa.sess=...
 
 ---
 
-### 6. コメント確定
+### 6. 状態取得
 
-#### POST /oid4vp/comment/confirm
-
-検証済みクレデンシャルデータを確定します。
-
-**認証**: セッションCookieに`request_id`が必要
-
-**リクエスト**:
-
-```http
-POST /oid4vp/comment/confirm HTTP/1.1
-Cookie: koa.sess=...
-```
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "claim_abc123"
-}
-```
-
-**レスポンスボディ**:
-
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `id` | string | 作成されたクレームID |
-
-**セッション**:
-
-確定後、セッションを無効化（`ctx.session = null`）
-
-**処理フロー**:
-1. セッションから`request_id`を取得
-2. sessions.credential_dataからデータを取得
-3. データを永続化（アプリケーション固有の処理）
-4. セッション状態を`committed`に更新
-5. セッションを無効化
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | `INVALID_HEADER` | セッションが不正 |
-| 404 | - | セッションが見つからない |
-
----
-
-### 7. コメントキャンセル
-
-#### POST /oid4vp/comment/cancel
-
-クレデンシャルデータの確定をキャンセルします。
-
-**認証**: セッションCookieに`request_id`が必要
-
-**リクエスト**:
-
-```http
-POST /oid4vp/comment/cancel HTTP/1.1
-Cookie: koa.sess=...
-```
-
-**レスポンス** (204 No Content):
-
-（ボディなし）
-
-**処理フロー**:
-1. セッション状態を`canceled`に更新
-2. post_statesテーブルの状態を更新
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 400 | `INVALID_HEADER` | セッションが不正 |
-| 404 | - | セッションが見つからない |
-
----
-
-### 8. 状態取得
-
-#### GET /oid4vp/comment/states
+#### GET /oid4vp/states
 
 現在のセッション状態を取得します。
 
@@ -400,7 +313,7 @@ Cookie: koa.sess=...
 **リクエスト**:
 
 ```http
-GET /oid4vp/comment/states HTTP/1.1
+GET /oid4vp/states HTTP/1.1
 Cookie: koa.sess=...
 ```
 
@@ -423,10 +336,8 @@ Cookie: koa.sess=...
 | 値 | 説明 | データフロー |
 |----|------|------------|
 | `started` | 認証リクエスト生成済み | POST /auth-request完了 |
-| `consumed` | レスポンスコード交換済み | POST /response-code/exchange完了 |
-| `committed` | クレデンシャル確定済み | POST /comment/confirm完了 |
+| `committed` | VP Token検証成功・確定済み | POST /response-code/exchange完了時に自動遷移 |
 | `expired` | セッション期限切れ | 有効期限超過 |
-| `canceled` | キャンセル済み | POST /comment/cancel実行 |
 | `invalid_submission` | 無効な提出 | Presentation Submission検証失敗 |
 
 **セッション**:
@@ -470,9 +381,7 @@ app.use(session({
 
 **対象エンドポイント**:
 - `POST /oid4vp/response-code/exchange`
-- `POST /oid4vp/comment/confirm`
-- `POST /oid4vp/comment/cancel`
-- `GET /oid4vp/comment/states`
+- `GET /oid4vp/states`
 
 ---
 
@@ -553,18 +462,14 @@ sequenceDiagram
     Verifier->>DB: INSERT response_codes
     Verifier-->>Wallet: redirect_uri + response_code
 
-    Note over Client,DB: 4. Response Code交換
+    Note over Client,DB: 4. Response Code交換とデータ確定
     Client->>Verifier: POST /response-code/exchange?response_code=zzz
     Verifier->>DB: SELECT response_codes WHERE code=zzz
     Verifier->>DB: UPDATE response_codes SET used=1
     Verifier->>DB: UPDATE sessions (credential_data=...)
-    Verifier-->>Client: Credential Data + Set-Cookie
-
-    Note over Client,DB: 5. データ確定
-    Client->>Verifier: POST /oid4vp/comment/confirm
-    Verifier->>DB: UPDATE sessions (state=committed)
     Verifier->>DB: UPDATE post_states (value=committed)
-    Verifier-->>Client: {id: claim_id} + Clear Session
+    Note right of Verifier: VP Token検証成功後、<br/>自動的にcommitted状態へ
+    Verifier-->>Client: Credential Data + Set-Cookie
 ```
 
 ---
@@ -602,12 +507,12 @@ GET /health-check HTTP/1.1
 
 ## まとめ
 
-OID4VP Verifier APIは、OpenID for Verifiable Presentationsプロトコルに準拠した単一ノードアーキテクチャで実装されています：
+OID4VP Verifier APIは、OpenID for Verifiable Presentationsプロトコルに準拠した純粋なVerifierとして実装されています：
 
-- **純粋なVerifier実装**: Identity Walletから提示されるVCを要求・検証
-- **SQLiteベースのセッション管理**: 一時的なセッションデータと検証済みクレデンシャルを保存
-- **完全なOID4VPフロー**: Authorization Request生成からVP Token検証、データ確定まで
-- **セキュアな設計**: JWT署名検証、X.509証明書チェーン検証、Cookie-basedセッション
+- **純粋なOID4VP Verifier実装**: 所属証明クレデンシャル(SD-JWT)の検証に特化
+- **簡素化されたフロー**: VP Token検証成功後、自動的にcommitted状態へ遷移
+- **SQLiteベースの状態管理**: post_statesテーブルで検証フローの状態を追跡
+- **セキュアな設計**: SD-JWT検証、X.509証明書チェーン検証、Cookie-basedセッション
 - **RESTful API**: 適切なHTTPメソッド、ステータスコード、エラーハンドリング
 
 本APIは、DIF Presentation Exchange、OpenID4VP、SD-JWT等の標準仕様に準拠しています。
