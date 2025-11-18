@@ -62,10 +62,10 @@ OID4VP Verifierシステムは、レイヤードアーキテクチャに基づ�
 #### Verifier (`verifier.ts`)
 
 **責務**:
-- Presentation Definition生成
+- DCQL Query生成
 - Authorization Request生成
 - VP Token検証
-- Descriptor処理
+- クレデンシャル抽出
 
 **主要関数**:
 
@@ -79,16 +79,15 @@ export const initVerifier = (datastore: VerifierDatastore): Verifier
 **実装**:
 ```typescript
 const verifier: Verifier = {
-  generatePresentationDefinition: async (inputDescriptors, submissionRequirements, purpose, name) => {
-    const pd: PresentationDefinition = {
-      id: uuidv4(),
-      input_descriptors: inputDescriptors,
-      submission_requirements: submissionRequirements,
-      name,
-      purpose,
+  generateDcqlQuery: (credentialRequirements) => {
+    return {
+      credentials: credentialRequirements.map((req) => ({
+        id: req.id,
+        format: req.format,
+        meta: req.meta,
+        claims: req.claims,
+      })),
     };
-    await datastore.savePresentationDefinition(pd);
-    return pd;
   },
 
   startRequest: async (request, clientId, options) => {
@@ -130,10 +129,10 @@ const verifier: Verifier = {
 
 **データストア**:
 - `VerifierDatastore`: SQLiteベースのデータストア
-  - `saveRequest(request)`: リクエスト保存
+  - `saveRequest(request)`: リクエスト保存（DCQL Query含む）
   - `getRequest(id)`: リクエスト取得
-  - `savePresentationDefinition(pd)`: Presentation Definition保存
-  - `getPresentationDefinition(id)`: Presentation Definition取得
+  - ~~`savePresentationDefinition(pd)`~~: **廃止**（DCQL移行のため不要）
+  - ~~`getPresentationDefinition(id)`~~: **廃止**（DCQL移行のため不要）
 
 #### Response Endpoint (`response-endpoint.ts`)
 
@@ -258,13 +257,20 @@ const request = await responseEndpoint.initiateTransaction({
   expiredIn: 600,
 });
 
-// 2. Presentation Definition生成
-const pd = await verifier.generatePresentationDefinition(
-  inputDescriptors,
-  submissionRequirements,
-  "Verify credential presentation",
-  "OID4VP Verifier"
-);
+// 2. DCQL Query生成
+const dcqlQuery = verifier.generateDcqlQuery([
+  {
+    id: "affiliation_credential",
+    format: "vc+sd-jwt",
+    meta: {
+      vct_values: ["https://example.com/AffiliationCredential"]
+    },
+    claims: [
+      { path: ["organization"] },
+      { path: ["portrait"] }
+    ]
+  }
+]);
 
 // 3. Authorization Request生成
 const authRequest = await verifier.startRequest(request, clientId, {
@@ -274,7 +280,7 @@ const authRequest = await verifier.startRequest(request, clientId, {
   requestObject: {
     clientIdScheme: "x509_san_dns",
     responseUri: process.env.OID4VP_RESPONSE_URI,
-    presentationDefinitionUri: `${pdUri}?id=${pd.id}`,
+    dcqlQuery,  // DCQL Query埋め込み
   },
 });
 
@@ -519,8 +525,7 @@ export const initPostStateRepository = (db: Database): PostStateRepository => ({
 interface VerifierDatastore {
   saveRequest(request: VerifierRequest): Promise<void>;
   getRequest(id: string): Promise<VerifierRequest | null>;
-  savePresentationDefinition(pd: PresentationDefinition): Promise<void>;
-  getPresentationDefinition(id: string): Promise<PresentationDefinition | null>;
+  // savePresentationDefinition/getPresentationDefinition: DCQL移行により廃止
 }
 ```
 
@@ -542,21 +547,7 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => ({
     );
   },
 
-  savePresentationDefinition: async (pd) => {
-    await db.run(
-      `INSERT INTO presentation_definitions (id, definition, created_at)
-       VALUES (?, ?, ?)`,
-      [pd.id, JSON.stringify(pd), Date.now()]
-    );
-  },
-
-  getPresentationDefinition: async (id) => {
-    const row = await db.get(
-      `SELECT definition FROM presentation_definitions WHERE id = ?`,
-      [id]
-    );
-    return row ? JSON.parse(row.definition) : null;
-  },
+  // savePresentationDefinition/getPresentationDefinition: 廃止（DCQL移行のため）
 });
 ```
 
@@ -648,8 +639,8 @@ export const initResponseEndpointDatastore = (db: Database): ResponseEndpointDat
 
 **エンドポイント**:
 - `POST /oid4vp/auth-request`: Authorization Request生成
-- `GET /oid4vp/request`: Request Object取得
-- `GET /oid4vp/presentation-definition`: Presentation Definition取得
+- `GET /oid4vp/request`: Request Object取得（DCQL Query含む）
+- ~~`GET /oid4vp/presentation-definition`~~: **廃止**（DCQL移行のため不要）
 - `POST /oid4vp/responses`: VP Token受信 (VP Token検証成功後、自動的にcommitted状態へ遷移)
 - `POST /oid4vp/response-code/exchange`: Response Code交換
 - `GET /oid4vp/states`: 状態取得
@@ -801,12 +792,8 @@ CREATE TABLE response_codes (
   FOREIGN KEY (request_id) REFERENCES requests(id)
 );
 
--- presentation_definitions: Presentation Definition
-CREATE TABLE presentation_definitions (
-  id TEXT PRIMARY KEY,
-  definition TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
+-- presentation_definitions: 廃止（DCQL移行のため）
+-- DCQL Queryはrequestsテーブルのdcql_queryカラムに保存
 
 -- post_states: 認証フロー状態追跡
 CREATE TABLE post_states (
@@ -831,7 +818,7 @@ CREATE INDEX idx_response_codes_request_id ON response_codes(request_id);
 CREATE INDEX idx_response_codes_expires_at ON response_codes(expires_at);
 CREATE INDEX idx_response_codes_used ON response_codes(used);
 
-CREATE INDEX idx_presentation_definitions_created_at ON presentation_definitions(created_at);
+-- presentation_definitions table/index: 廃止（DCQL移行のため）
 
 CREATE INDEX idx_post_states_expires_at ON post_states(expires_at);
 CREATE INDEX idx_post_states_value ON post_states(value);
