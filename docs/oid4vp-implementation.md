@@ -16,7 +16,7 @@
 - **Presentation Definition**: Verifierが要求するクレデンシャルの条件
 - **SD-JWT**: Selective Disclosure JWT（選択的開示）
 
-### プロトコルフロー
+### プロトコルフロー（簡易版）
 
 ```
 ┌─────────────┐                                      ┌──────────────┐
@@ -837,6 +837,73 @@ const handleDescriptorError = (error: DescriptorError): NotSuccessResult => {
 | `OID4VP_CLIENT_METADATA_LOGO_URI` | クライアントロゴURI | `http://localhost/logo.png` |
 | `OID4VP_CLIENT_METADATA_POLICY_URI` | ポリシーURI | - |
 | `OID4VP_CLIENT_METADATA_TOS_URI` | 利用規約URI | - |
+
+## 完全なデータフロー
+
+### 詳細なOID4VPフロー（全30ステップ）
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant V as OID4VP Verifier
+    participant W as Wallet
+    participant DB as SQLite
+
+    U->>F: 1. 認証開始ボタンクリック
+    F->>V: 2. POST /oid4vp/auth-request
+    V->>DB: 3. Presentation Definition保存
+    V->>DB: 4. Session作成 (state: started)
+    V->>F: 5. Authorization Request返却
+    F->>U: 6. QRコード表示
+
+    U->>W: 7. QRコードスキャン
+    W->>V: 8. GET /oid4vp/request?id={requestId}
+    V->>DB: 9. Request Object取得
+    V->>W: 10. Request Object返却
+
+    W->>V: 11. GET /oid4vp/presentation-definition?id={pdId}
+    V->>DB: 12. Presentation Definition取得
+    V->>W: 13. Presentation Definition返却
+
+    W->>W: 14. VP Token生成 (SD-JWT)
+    W->>V: 15. POST /oid4vp/responses (VP Token)
+    V->>V: 16. VP Token検証
+    V->>V: 17. VC検証 (X.509チェーン)
+    V->>DB: 18. Response Code保存
+    V->>DB: 19. Session更新 (state: consumed)
+    V->>W: 20. Response Code返却
+
+    W->>F: 21. リダイレクト
+    F->>V: 22. POST /oid4vp/response-code/exchange
+    V->>DB: 23. Response Code検証
+    V->>F: 24. Credential Data返却
+
+    F->>U: 25. データ確認画面表示
+    U->>F: 26. 確認ボタンクリック
+    F->>V: 27. POST /oid4vp/comment/confirm
+    V->>DB: 28. Session更新 (state: committed)
+    V->>F: 29. 204 No Content
+    F->>U: 30. 完了画面表示
+```
+
+### セッション状態遷移
+
+```mermaid
+stateDiagram-v2
+    [*] --> started: POST /auth-request
+    started --> consumed: POST /responses (VP Token検証成功)
+    consumed --> committed: POST /comment/confirm
+    committed --> [*]: セッション完了
+
+    started --> expired: タイムアウト (10分)
+    consumed --> expired: タイムアウト (10分)
+    expired --> [*]: クリーンアップ
+
+    started --> cancelled: POST /comment/cancel
+    consumed --> cancelled: POST /comment/cancel
+    cancelled --> [*]: セッション削除
+```
 
 ## まとめ
 

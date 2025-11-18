@@ -202,69 +202,10 @@ const responseEndpoint: ResponseEndpoint = {
 
 **主要関数**:
 
-##### verifyJwt()
+- `verifyJwt()` - JWT署名とX.509証明書チェーンの検証
+- `verifyVcForW3CVcDataV1()` - SD-JWT形式のVerifiable Credentialの検証と展開
 
-**シグネチャ**:
-```typescript
-export const verifyJwt = async (
-  jwt: string,
-  opts: { skipVerifyChain?: boolean } = {}
-): Promise<{ ok: boolean; error?: any }>
-```
-
-**処理フロー**:
-```typescript
-// 1. JWTヘッダーデコード
-const header = decodeProtectedHeader(jwt);
-
-// 2. X.509証明書チェーン検証
-if (!opts.skipVerifyChain && header.x5c) {
-  const chainVerifyResult = await verifyCertificateChain(header.x5c);
-  if (!chainVerifyResult.ok) {
-    return { ok: false, error: { type: "VERIFY_FAILURE" } };
-  }
-}
-
-// 3. JWK抽出（x5cの先頭証明書から）
-const publicKey = await extractPublicKeyFromX5c(header.x5c[0]);
-
-// 4. JWT署名検証
-const verifyResult = await jwtVerify(jwt, publicKey);
-
-return { ok: true };
-```
-
-##### verifyVcForW3CVcDataV1()
-
-**シグネチャ**:
-```typescript
-export const verifyVcForW3CVcDataV1 = async <T>(
-  credential: string,
-  opts: { skipVerifyChain?: boolean } = {}
-): Promise<ExtractedCredential<T>>
-```
-
-**処理フロー**:
-```typescript
-// 1. SD-JWTデコード
-const { issueJwt, disclosures } = decodeSdJwt(credential);
-
-// 2. JWT署名検証 + X.509検証
-const verifyResult = await verifyJwt(issueJwt, opts);
-if (!verifyResult.ok) {
-  throw new Error("Verification failed");
-}
-
-// 3. Disclosureから値を展開
-const decoded = decodeJWT(issueJwt);
-const credentialSubject = expandDisclosures(decoded, disclosures);
-
-return {
-  raw: credential,
-  value: credentialSubject as T,
-  verified: true,
-};
-```
+詳細な実装とセキュリティ考慮事項については、[security.md](security.md#2-jwtjwk処理)を参照してください。
 
 **依存関係**:
 - `jose`: JWT処理
@@ -925,28 +866,9 @@ CREATE INDEX idx_post_states_value ON post_states(value);
 
 **ファイル**: `tool-box/x509/x509.ts`
 
-**主要関数**:
+**主要関数**: `verifyCertificateChain()` - 証明書チェーンの検証
 
-```typescript
-export const verifyCertificateChain = async (
-  x5c: string[]
-): Promise<Result<boolean, X509Error>> => {
-  // 1. PEM変換
-  const certs = x5c.map(cert => Certificate.fromPEM(cert));
-
-  // 2. チェーン検証
-  for (let i = 0; i < certs.length - 1; i++) {
-    const cert = certs[i];
-    const issuer = certs[i + 1];
-    const verifyResult = await cert.verify({ publicKey: issuer.publicKey });
-    if (!verifyResult) {
-      return { ok: false, error: { type: "VERIFY_FAILURE" } };
-    }
-  }
-
-  return { ok: true, payload: true };
-};
-```
+詳細な実装とセキュリティ考慮事項については、[security.md](security.md#1-x509証明書管理)を参照してください。
 
 **依存関係**:
 - `pkijs`: X.509証明書処理
