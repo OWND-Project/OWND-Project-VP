@@ -37,47 +37,7 @@ export interface DcqlQuery {
 }
 
 // Deprecated PEX types - kept for backward compatibility, will be removed in future versions
-// https://identity.foundation/presentation-exchange/#input-descriptor-2
-/** @deprecated Use DCQL instead */
-export interface InputDescriptor {
-  id: string;
-  name?: string;
-  purpose?: string;
-  format?: VCFormats;
-  constraints: any;
-  group?: string[];
-  [key: string]: any;
-}
-
-/** @deprecated Use DCQL instead */
-export interface DescriptorMap {
-  id: string;
-  format: string;
-  path: string;
-  pathNested?: Omit<DescriptorMap, "id">;
-}
-
-/** @deprecated Use DCQL instead */
-export interface SubmissionRequirement {
-  name: string;
-  count: number;
-  rule: string;
-  from: string;
-}
-
-/** @deprecated Use DCQL instead */
-export interface PresentationDefinition {
-  id: string;
-  inputDescriptors: InputDescriptor[];
-  submissionRequirements: any[];
-}
-
-/** @deprecated Use DCQL instead */
-export interface PresentationSubmission {
-  id: string;
-  definitionId: string;
-  descriptorMap: DescriptorMap[];
-}
+// PEX types removed - migrated to DCQL (OID4VP 1.0)
 
 export interface VerifiableCredential<T> {
   vc: VerifiableCredentialPayload<T>;

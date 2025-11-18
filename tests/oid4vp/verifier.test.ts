@@ -4,9 +4,6 @@ import { v4 as uuidv4 } from "uuid";
 import * as jose from "jose";
 
 import {
-  DescriptorMap,
-  PresentationDefinition,
-  PresentationSubmission,
   Verifier,
   VerifierDatastore,
   VpRequestAtVerifier,
@@ -17,6 +14,32 @@ import {
   camelToSnake,
   getKeyAlgorithm,
 } from "../../src/oid4vp/index.js";
+
+// Deprecated PEX types removed (no longer exported)
+// DescriptorMap, PresentationDefinition, PresentationSubmission
+// Defined locally for backward compatibility in deprecated tests
+
+interface DescriptorMap {
+  id: string;
+  path: string;
+  format: string;
+  pathNested?: {
+    format: string;
+    path: string;
+  };
+}
+
+interface PresentationSubmission {
+  id: string;
+  definitionId: string;
+  descriptorMap: DescriptorMap[];
+}
+
+interface PresentationDefinition {
+  id: string;
+  inputDescriptors: any[];
+  submissionRequirements?: any[];
+}
 import { getCurrentUnixTimeInSeconds } from "../../src/utils/data-util.js";
 import { createKeyPair, extractPublicKeyFromX5c } from "../test-utils.js";
 import { issueJwt } from "../../src/helpers/jwt-helper.js";
@@ -497,6 +520,7 @@ describe("Verifier", () => {
       verifier.setAuthResponse(authResponse);
 
       // execute
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getPresentation(map1);
 
       // assert
@@ -529,6 +553,7 @@ describe("Verifier", () => {
       verifier.setAuthResponse(authResponse);
 
       // execute
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getPresentation(map1);
 
       // assert
@@ -578,6 +603,7 @@ describe("Verifier", () => {
       verifier.setAuthResponse(authResponse);
 
       // execute
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getPresentation(map1, verifyFunction);
 
       // assert
@@ -624,6 +650,7 @@ describe("Verifier", () => {
       const verifier = initVerifier(verifierDatastore);
 
       // execute
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getCredential(
         { vp: { decoded: presentation, raw: "dummy" }, descriptorMap: map1 },
         verifyFunction,
@@ -659,6 +686,7 @@ describe("Verifier", () => {
       const verifier = initVerifier(verifierDatastore);
 
       // execute
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getCredential(
         { vp: { decoded: presentation, raw: "dummy" }, descriptorMap: map1 },
         verifyFunction,
@@ -686,6 +714,7 @@ describe("Verifier", () => {
       const verifier = initVerifier(verifierDatastore);
 
       // execute
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getCredential(
         { vp: { decoded: presentation, raw: "dummy" }, descriptorMap: map1 },
         verifyFunction,

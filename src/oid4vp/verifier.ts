@@ -6,14 +6,9 @@ import {
   ConsumedError,
   DcqlCredentialQuery,
   DcqlQuery,
-  DescriptorMap,
   ExpiredError,
-  InputDescriptor,
   UnexpectedError,
   NotFoundError,
-  PresentationDefinition,
-  PresentationSubmission,
-  SubmissionRequirement,
 } from "./types.js";
 
 import { AuthResponsePayload, VpRequest } from "./response-endpoint.js";
@@ -23,16 +18,10 @@ import {
   GenerateRequestObjectOptions,
   generateRequestObjectPayload,
   MissingSignerKey,
-  snakeToCamel,
   UnsupportedClientIdSchemeError,
 } from "./auth-request.js";
-import {
-  extractNestedCredential,
-  extractCredential,
-  extractPresentation,
-  getDescriptorMap,
-  VerifierFunction,
-} from "./verify.js";
+// Removed unused imports: extractNestedCredential, extractCredential, extractPresentation, getDescriptorMap
+// These were only used by deprecated PEX methods
 import { getCurrentUnixTimeInSeconds, isExpired } from "../utils/data-util.js";
 
 export interface VpRequestAtVerifier {
@@ -217,176 +206,8 @@ export const initVerifier = (datastore: VerifierDatastore) => {
   // Removed: generatePresentationDefinition, getPresentationDefinition, getPresentationDefinitionMap
   // These methods are part of the deprecated PEX flow and replaced by DCQL
 
-  /**
-   * @deprecated PEX-related method. Will be removed in Phase 6 when VP Token direct processing is implemented.
-   */
-  const getOptionalDescriptor = async (
-    inputDescriptorId: string,
-    authResponse: AuthResponsePayload,
-  ): Promise<
-    Result<{ descriptorMap: DescriptorMap | null }, DescriptorError>
-  > => {
-    const result = await getDescriptor(inputDescriptorId, authResponse);
-    if (!result.ok) {
-      const { type } = result.error;
-      if (type === "NO_SUBMISSION") {
-        return { ok: true, payload: { descriptorMap: null } };
-      }
-    }
-    return result;
-  };
-
-  /**
-   * @deprecated PEX-related method. Will be removed in Phase 6 when VP Token direct processing is implemented.
-   */
-  const getDescriptor = async (
-    inputDescriptorId: string,
-    authResponse: AuthResponsePayload,
-  ): Promise<Result<{ descriptorMap: DescriptorMap }, DescriptorError>> => {
-    const { presentationSubmission } = authResponse;
-
-    if (!presentationSubmission) {
-      return {
-        ok: false,
-        error: { type: "NO_SUBMISSION" },
-      };
-    }
-
-    let submission: PresentationSubmission;
-    try {
-      submission = snakeToCamel(JSON.parse(presentationSubmission));
-    } catch (err) {
-      return {
-        ok: false,
-        error: { type: "UNEXPECTED_ERROR", cause: err },
-      };
-    }
-
-    // Note: getPresentationDefinition removed. This method is deprecated and will be replaced in Phase 6.
-    // For now, we construct a minimal descriptor map without PD validation.
-    const descMap = getDescriptorMap(
-      { id: inputDescriptorId } as any,
-      submission.descriptorMap,
-    );
-    if (!descMap) {
-      return {
-        ok: false,
-        error: { type: "NO_SUBMISSION" },
-      };
-    }
-    setAuthResponse(authResponse);
-    return { ok: true, payload: { descriptorMap: descMap } };
-  };
-
-  interface VP<T> {
-    decoded: T;
-    raw: any;
-  }
-  interface Presentation<T = any> {
-    vp: VP<T>;
-    descriptorMap: DescriptorMap;
-  }
-  const getPresentation = async <T, U>(
-    descMap: DescriptorMap,
-    verifier?: VerifierFunction<T, U>,
-  ): Promise<Result<Presentation<U>, PresentationError>> => {
-    const { vpToken, presentationSubmission } = getAuthResponse()!;
-    const opts = verifier ? { verifier } : undefined;
-
-    // Convert DCQL format (Record<string, string[]>) to PEX format (string | string[])
-    // for backward compatibility with deprecated PEX code
-    let legacyVpToken: string | string[];
-    if (typeof vpToken === 'string') {
-      legacyVpToken = vpToken;
-    } else if (Array.isArray(vpToken)) {
-      legacyVpToken = vpToken;
-    } else {
-      // DCQL format: extract first credential query's presentations
-      const queryIds = Object.keys(vpToken);
-      if (queryIds.length === 0) {
-        return {
-          ok: false,
-          error: {
-            type: "INVALID_SUBMISSION",
-            reason: "No credentials in VP Token",
-          },
-        };
-      }
-      const presentations = vpToken[queryIds[0]];
-      legacyVpToken = presentations.length === 1 ? presentations[0] : presentations;
-    }
-
-    const extractResult = await extractPresentation<T, U>(
-      legacyVpToken,
-      descMap,
-      opts,
-    );
-    if (extractResult.ok) {
-      return {
-        ok: true,
-        payload: {
-          vp: extractResult.payload,
-          descriptorMap: descMap,
-        },
-      };
-    } else {
-      const { error } = extractResult;
-      let reason = "";
-      if (error.type === "UNMATCHED_PATH") {
-        reason = "vp token matched to path is not found";
-      } else if (error.type === "UNSUPPORTED_FORMAT") {
-        reason = `unsupported format (${descMap.format}) specified`;
-      } else if (error.type === "DECODE_FAILURE") {
-        reason = `decode ${vpToken} was failed`;
-      } else if (error.type === "VALIDATE_FAILURE") {
-        reason = `validate ${vpToken} was failed`;
-      }
-      return { ok: false, error: { type: "INVALID_SUBMISSION", reason } };
-    }
-  };
-
-  const getCredential = async <T, U>(
-    presentation: Presentation,
-    verifier: VerifierFunction<T, U>,
-  ): Promise<Result<{ raw: T; decoded: U }, CredentialError>> => {
-    const { format, path, pathNested } = presentation.descriptorMap;
-    const opts = { verifier };
-    if (pathNested) {
-      const extractResult = await extractNestedCredential<T, U>(
-        presentation.vp.decoded,
-        pathNested.format,
-        pathNested.path,
-        opts,
-      );
-      if (extractResult.ok) {
-        return { ok: true, payload: extractResult.payload };
-      } else {
-        const { error } = extractResult;
-        let reason = "";
-        if (error.type === "UNMATCHED_PATH") {
-          reason = "vp token matched to path is not found";
-        } else if (error.type === "UNSUPPORTED_FORMAT") {
-          reason = `unsupported format (${pathNested.format}) specified`;
-        } else if (error.type === "DECODE_FAILURE") {
-          reason = `decode credential was failed`;
-        } else if (error.type === "VALIDATE_FAILURE") {
-          reason = `validate credential was failed`;
-        }
-        return { ok: false, error: { type: "INVALID_SUBMISSION", reason } };
-      }
-    } else {
-      const { raw } = presentation.vp;
-      const extractResult = await extractCredential<T, U>(raw, format, opts);
-      if (extractResult.ok) {
-        const { payload } = extractResult;
-        // return { raw: presentation.vp.raw, ...payload };
-        return { ok: true, payload: { decoded: payload, raw } };
-      } else {
-        // return toError("CREDENTIAL_NOT_SUBMITTED");
-        throw Error("CREDENTIAL_NOT_SUBMITTED");
-      }
-    }
-  };
+  // Deprecated PEX methods removed (getOptionalDescriptor, getDescriptor, getPresentation, getCredential)
+  // Use extractCredentialFromVpToken for DCQL-based VP Token processing
 
   const setAuthResponse = (authResponse: AuthResponsePayload) => {
     state.authResponse = authResponse;
@@ -416,9 +237,6 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     getAuthResponse,
     generateDcqlQuery,
     // Removed: generatePresentationDefinition, getPresentationDefinition, getPresentationDefinitionMap
-    getCredential,
-    getDescriptor,
-    getOptionalDescriptor,
-    getPresentation,
+    // Removed: getCredential, getDescriptor, getOptionalDescriptor, getPresentation (PEX deprecated methods)
   };
 };

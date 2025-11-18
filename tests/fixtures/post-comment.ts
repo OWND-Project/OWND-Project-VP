@@ -8,11 +8,23 @@ import {
 import {
   AuthorizationRequest,
   camelToSnake,
-  PresentationSubmission,
 } from "../../src/oid4vp/index.js";
-import {
-  INPUT_DESCRIPTOR_ID2,
-} from "../../src/usecases/internal/input-descriptor.js";
+
+// INPUT_DESCRIPTOR_ID2 removed - PEX deprecated
+const INPUT_DESCRIPTOR_ID2 = "affiliation_credential"; // DCQL credential query ID
+
+// Deprecated PEX types - defined locally for backward compatibility in tests
+interface DescriptorMap {
+  id: string;
+  path: string;
+  format: string;
+}
+
+interface PresentationSubmission {
+  id: string;
+  definitionId: string;
+  descriptorMap: DescriptorMap[];
+}
 import { createIdToken, createKeyPair, createSdJwt } from "../test-utils.js";
 import { issueJwtUsingX5C } from "../oid4vp/test-utils.js";
 import { issueJwt } from "../../src/helpers/jwt-helper.js";

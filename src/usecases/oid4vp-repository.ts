@@ -22,7 +22,6 @@ import {
   AuthResponse,
   ResponseEndpointDatastore,
   VpRequest,
-  PresentationDefinition,
   VerifierDatastore,
   VpRequestAtVerifier,
 } from "../oid4vp/index.js";
