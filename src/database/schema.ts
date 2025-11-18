@@ -65,15 +65,16 @@ CREATE INDEX IF NOT EXISTS idx_response_codes_used ON response_codes(used);
 
 /**
  * presentation_definitionsテーブル
- * Presentation Definition管理
+ * Deprecated: PEX removed in OID4VP 1.0, replaced by DCQL
+ * This table will be dropped in a future migration
  */
-export const DDL_PRESENTATION_DEFINITIONS = `
-CREATE TABLE IF NOT EXISTS presentation_definitions (
-  id TEXT PRIMARY KEY,
-  definition TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-`;
+// export const DDL_PRESENTATION_DEFINITIONS = `
+// CREATE TABLE IF NOT EXISTS presentation_definitions (
+//   id TEXT PRIMARY KEY,
+//   definition TEXT NOT NULL,
+//   created_at INTEGER NOT NULL
+// );
+// `;
 
 /**
  * post_statesテーブル
@@ -99,7 +100,7 @@ export const ALL_TABLES = [
   DDL_SESSIONS,
   DDL_REQUESTS,
   DDL_RESPONSE_CODES,
-  DDL_PRESENTATION_DEFINITIONS,
+  // DDL_PRESENTATION_DEFINITIONS, // Removed: PEX deprecated
   DDL_POST_STATES,
 ];
 

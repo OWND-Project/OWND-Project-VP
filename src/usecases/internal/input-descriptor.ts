@@ -1,5 +1,12 @@
+/**
+ * @deprecated This file contains PEX-related Input Descriptors which are deprecated.
+ * These will be replaced with DCQL credential queries in Phase 6.
+ * Use DCQL for new implementations.
+ */
+
 import { InputDescriptor, VC_FORMAT_VC_SD_JWT } from "../../oid4vp/types.js";
 
+/** @deprecated Use DCQL instead */
 export const submissionRequirementAffiliation = {
   name: "Affiliation",
   rule: "pick",
@@ -7,8 +14,10 @@ export const submissionRequirementAffiliation = {
   from: "A",
 };
 
+/** @deprecated Use DCQL instead */
 export const INPUT_DESCRIPTOR_ID2 = "affiliation_credential";
 
+/** @deprecated Use DCQL instead */
 export const INPUT_DESCRIPTOR_AFFILIATION: InputDescriptor = {
   group: ["A"],
   id: INPUT_DESCRIPTOR_ID2,

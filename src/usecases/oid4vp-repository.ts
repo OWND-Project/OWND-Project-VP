@@ -145,29 +145,7 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
         consumedAt: row.consumed_at,
       } as VpRequestAtVerifier;
     },
-    savePresentationDefinition: async (
-      presentationDefinition: PresentationDefinition
-    ) => {
-      await db.run(
-        `INSERT OR REPLACE INTO presentation_definitions
-         (id, definition, created_at)
-         VALUES (?, ?, ?)`,
-        [
-          presentationDefinition.id,
-          JSON.stringify(presentationDefinition),
-          getCurrentUnixTimeInSeconds(),
-        ]
-      );
-    },
-    getPresentationDefinition: async (presentationDefinitionId: string) => {
-      const row = await db.get<any>(
-        "SELECT * FROM presentation_definitions WHERE id = ?",
-        [presentationDefinitionId]
-      );
-      if (!row) return null;
-
-      return JSON.parse(row.definition) as PresentationDefinition;
-    },
+    // Removed: savePresentationDefinition and getPresentationDefinition (PEX deprecated)
   };
   return verifierDatastore;
 };

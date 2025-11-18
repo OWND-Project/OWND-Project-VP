@@ -48,12 +48,7 @@ export interface VpRequestAtVerifier {
 export interface VerifierDatastore {
   saveRequest: (request: VpRequestAtVerifier) => Promise<void>;
   getRequest: (requestId: string) => Promise<VpRequestAtVerifier | null>;
-  savePresentationDefinition: (
-    presentationDefinition: PresentationDefinition,
-  ) => Promise<void>;
-  getPresentationDefinition: (
-    presentationDefinitionId: string,
-  ) => Promise<PresentationDefinition | null>;
+  // Removed: savePresentationDefinition and getPresentationDefinition (PEX deprecated)
 }
 
 export type AuthorizationRequest = {
@@ -219,57 +214,8 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     }
   };
 
-  /**
-   * Generates a presentation definition and saves it in the datastore.
-   * The presentation definition includes input descriptors, submission requirements, and optionally a name and purpose.
-   * @param inputDescriptors - An array of input descriptors
-   * @param submissionRequirements - An array of submission requirements
-   * @param name - The name of the presentation definition (optional)
-   * @param purpose - The purpose of the presentation definition (optional)
-   * @returns A Promise that resolves to the presentation definition object
-   */
-  const generatePresentationDefinition = async (
-    inputDescriptors: InputDescriptor[],
-    submissionRequirements: SubmissionRequirement[],
-    name: string = "",
-    purpose: string = "",
-  ) => {
-    // https://identity.foundation/presentation-exchange/#presentation-definition
-    const pd = {
-      id: uuidv4(),
-      inputDescriptors,
-      submissionRequirements: submissionRequirements,
-      name,
-      purpose,
-    };
-    await datastore.savePresentationDefinition(pd);
-    return pd;
-  };
-
-  /**
-   *
-   * @param presentationDefinitionId
-   */
-  const getPresentationDefinition = async (
-    presentationDefinitionId: string,
-  ) => {
-    return await datastore.getPresentationDefinition(presentationDefinitionId);
-  };
-
-  /**
-   *
-   * @param presentationDefinitionId
-   */
-  const getPresentationDefinitionMap = async (
-    presentationDefinitionId: string,
-  ) => {
-    const pd = await getPresentationDefinition(presentationDefinitionId);
-    if (pd) {
-      return camelToSnake(pd);
-    } else {
-      return null;
-    }
-  };
+  // Removed: generatePresentationDefinition, getPresentationDefinition, getPresentationDefinitionMap
+  // These methods are part of the deprecated PEX flow and replaced by DCQL
 
   const getOptionalDescriptor = async (
     inputDescriptorId: string,
@@ -445,9 +391,7 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     setAuthResponse,
     getAuthResponse,
     generateDcqlQuery,
-    generatePresentationDefinition,
-    getPresentationDefinition,
-    getPresentationDefinitionMap,
+    // Removed: generatePresentationDefinition, getPresentationDefinition, getPresentationDefinitionMap
     getCredential,
     getDescriptor,
     getOptionalDescriptor,

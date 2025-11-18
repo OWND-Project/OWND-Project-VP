@@ -36,7 +36,9 @@ export interface DcqlQuery {
   credentials: DcqlCredentialQuery[];
 }
 
+// Deprecated PEX types - kept for backward compatibility, will be removed in future versions
 // https://identity.foundation/presentation-exchange/#input-descriptor-2
+/** @deprecated Use DCQL instead */
 export interface InputDescriptor {
   id: string;
   name?: string;
@@ -47,6 +49,7 @@ export interface InputDescriptor {
   [key: string]: any;
 }
 
+/** @deprecated Use DCQL instead */
 export interface DescriptorMap {
   id: string;
   format: string;
@@ -54,6 +57,7 @@ export interface DescriptorMap {
   pathNested?: Omit<DescriptorMap, "id">;
 }
 
+/** @deprecated Use DCQL instead */
 export interface SubmissionRequirement {
   name: string;
   count: number;
@@ -61,12 +65,14 @@ export interface SubmissionRequirement {
   from: string;
 }
 
+/** @deprecated Use DCQL instead */
 export interface PresentationDefinition {
   id: string;
   inputDescriptors: InputDescriptor[];
   submissionRequirements: any[];
 }
 
+/** @deprecated Use DCQL instead */
 export interface PresentationSubmission {
   id: string;
   definitionId: string;

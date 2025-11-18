@@ -107,27 +107,7 @@ export const routes = async (appContext: AppContext) => {
       ctx.body = body;
     }
   });
-  router.get(
-    `/${apiDomain}/presentation-definition`,
-    koaBody(),
-    async (ctx) => {
-      const query = ctx.query;
-      const id = typeof query.id === "string" ? String(query.id) : "";
-      if (id) {
-        const pd = await interactor.getPresentationDefinition(id);
-        if (pd) {
-          ctx.status = 200;
-          ctx.body = pd;
-        } else {
-          ctx.status = 404;
-          ctx.body = toErrorBody("NOT_FOUND");
-        }
-      } else {
-        ctx.status = 404;
-        ctx.body = toErrorBody("NOT_FOUND");
-      }
-    },
-  );
+  // Removed: GET /presentation-definition endpoint (PEX deprecated, replaced by DCQL)
   router.post(
     responseEndpointPath,
     koaBody({

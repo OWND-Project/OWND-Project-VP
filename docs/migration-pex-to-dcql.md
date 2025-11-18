@@ -305,12 +305,12 @@ const extractCredentialFromVpToken = async <T, U>(
 | 1 | DCQL 型定義の追加 | ✅ 完了 | 2025-11-18 |
 | 2 | Request Object への DCQL 追加 | ✅ 完了 | 2025-11-18 |
 | 3 | Verifier に DCQL Query 生成追加 | ✅ 完了 | 2025-11-18 |
-| 4.1 | Verifier から PD 削除 | ⬜ 未着手 | - |
-| 4.2 | Types から PD 削除 | ⬜ 未着手 | - |
-| 4.3 | Repository から PD 削除 | ⬜ 未着手 | - |
-| 4.4 | Database Schema から PD 削除 | ⬜ 未着手 | - |
-| 4.5 | Routes から PD エンドポイント削除 | ⬜ 未着手 | - |
-| 4.6 | Input Descriptor ファイル削除 | ⬜ 未着手 | - |
+| 4.1 | Verifier から PD 削除 | ✅ 完了 | 2025-11-18 |
+| 4.2 | Types から PD 削除 | ✅ 完了 | 2025-11-18 |
+| 4.3 | Repository から PD 削除 | ✅ 完了 | 2025-11-18 |
+| 4.4 | Database Schema から PD 削除 | ✅ 完了 | 2025-11-18 |
+| 4.5 | Routes から PD エンドポイント削除 | ✅ 完了 | 2025-11-18 |
+| 4.6 | Input Descriptor ファイル削除 | ✅ 完了 | 2025-11-18 |
 | 5.1 | Types から PS 削除 | ⬜ 未着手 | - |
 | 5.2 | Response Endpoint から PS 削除 | ⬜ 未着手 | - |
 | 5.3 | Verifier から descriptor 処理削除 | ⬜ 未着手 | - |
