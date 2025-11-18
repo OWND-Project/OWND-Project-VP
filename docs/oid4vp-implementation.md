@@ -241,25 +241,22 @@ const generateAuthRequest = async (presenter) => {
 **処理フロー**:
 
 ```typescript
-const getRequestObject = async (requestId, presentationDefinitionId) => {
+const getRequestObject = async (requestId) => {
   // 1. リクエスト検証
   const request = await getRequest(requestId);
   if (!request) return { ok: false, error: { type: "NOT_FOUND" } };
   if (isExpired(request)) return { ok: false, error: { type: "EXPIRED" } };
   if (request.consumedAt > 0) return { ok: false, error: { type: "CONSUMED" } };
 
-  // 2. Presentation Definition取得
-  const pd = await getPresentationDefinition(presentationDefinitionId);
-
-  // 3. Request Object (JWT)生成
+  // 2. DCQL Queryを含むRequest Object (JWT)生成
   const requestObjectJwt = await generateRequestObjectJwt(
     clientId,
     {
       nonce: request.nonce,
       state: request.id,
       responseUri: responseUri,
-      presentationDefinitionUri: `${presentationDefinitionUri}?id=${pd.id}`,
       clientIdScheme: "x509_san_dns",
+      dcqlQuery: request.dcql_query,  // DCQL Query（DB保存済み）
       clientMetadata: generateClientMetadata(),
     },
     verifierJwk,
@@ -291,7 +288,21 @@ const getRequestObject = async (requestId, presentationDefinitionId) => {
   "response_uri": "http://localhost/oid4vp/responses",
   "nonce": "7f8a9b0c1d2e3f4g5h6i7j8k9l0m1n2o",
   "state": "req-123",
-  "presentation_definition_uri": "http://localhost/oid4vp/presentation-definition?id=pd-789",
+  "dcql_query": {
+    "credentials": [
+      {
+        "id": "affiliation_credential",
+        "format": "vc+sd-jwt",
+        "meta": {
+          "vct_values": ["https://example.com/AffiliationCredential"]
+        },
+        "claims": [
+          {"path": ["organization"]},
+          {"path": ["portrait"]}
+        ]
+      }
+    ]
+  },
   "client_metadata": {
     "vp_formats": { "vc+sd-jwt": {} },
     "client_name": "boolcheck.com",
@@ -681,7 +692,7 @@ const handleDescriptorError = (error: DescriptorError): NotSuccessResult => {
 | `OID4VP_REQUEST_URI` | リクエストURI | `http://localhost/oid4vp/request` |
 | `OID4VP_RESPONSE_URI` | レスポンスURI | `http://localhost/oid4vp/responses` |
 | `OID4VP_REDIRECT_URI` | リダイレクトURI | `http://localhost/oid4vp/redirect` |
-| `OID4VP_PRESENTATION_DEFINITION_URI` | Presentation Definition URI | `http://localhost/oid4vp/presentation-definitions` |
+| ~~`OID4VP_PRESENTATION_DEFINITION_URI`~~ | ~~Presentation Definition URI~~ | **廃止** (DCQL移行のため不要) |
 | `OID4VP_REQUEST_EXPIRED_IN_AT_VERIFIER` | Verifierリクエスト有効期限（秒） | `600` |
 | `OID4VP_REQUEST_EXPIRED_IN_AT_RESPONSE_ENDPOINT` | レスポンスエンドポイントリクエスト有効期限（秒） | `600` |
 | `OID4VP_RESPONSE_EXPIRED_IN` | レスポンス有効期限（秒） | `600` |
@@ -707,7 +718,7 @@ sequenceDiagram
 
     U->>F: 1. 認証開始ボタンクリック
     F->>V: 2. POST /oid4vp/auth-request
-    V->>DB: 3. Presentation Definition保存
+    V->>DB: 3. DCQL Query保存（requestsテーブル内）
     V->>DB: 4. PostState作成 (state: started)
     V->>F: 5. Authorization Request返却
     F->>U: 6. QRコード表示
@@ -715,27 +726,23 @@ sequenceDiagram
     U->>W: 7. QRコードスキャン
     W->>V: 8. GET /oid4vp/request?id={requestId}
     V->>DB: 9. Request Object取得
-    V->>W: 10. Request Object返却
+    V->>W: 10. Request Object返却（DCQL Query含む）
 
-    W->>V: 11. GET /oid4vp/presentation-definition?id={pdId}
-    V->>DB: 12. Presentation Definition取得
-    V->>W: 13. Presentation Definition返却
+    W->>W: 11. VP Token生成 (SD-JWT)
+    W->>V: 12. POST /oid4vp/responses (VP Token)
+    V->>V: 13. VP Token検証
+    V->>V: 14. VC検証 (X.509チェーン)
+    V->>DB: 15. Response Code保存
+    V->>W: 16. Response Code返却
 
-    W->>W: 14. VP Token生成 (SD-JWT)
-    W->>V: 15. POST /oid4vp/responses (VP Token)
-    V->>V: 16. VP Token検証
-    V->>V: 17. VC検証 (X.509チェーン)
-    V->>DB: 18. Response Code保存
-    V->>W: 19. Response Code返却
+    W->>F: 17. リダイレクト
+    F->>V: 18. POST /oid4vp/response-code/exchange
+    V->>DB: 19. Response Code検証
+    V->>DB: 20. PostState更新 (state: committed - 自動)
+    V->>DB: 21. Session更新 & クリア
+    V->>F: 22. Credential Data返却
 
-    W->>F: 20. リダイレクト
-    F->>V: 21. POST /oid4vp/response-code/exchange
-    V->>DB: 22. Response Code検証
-    V->>DB: 23. PostState更新 (state: committed - 自動)
-    V->>DB: 24. Session更新 & クリア
-    V->>F: 25. Credential Data返却
-
-    F->>U: 26. 完了画面表示
+    F->>U: 23. 完了画面表示
 ```
 
 ### セッション状態遷移
