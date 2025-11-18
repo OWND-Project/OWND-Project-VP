@@ -10,7 +10,7 @@ import {
   KeyLike,
   SignJWT,
 } from "jose";
-import { PrivateJwk, PublicJwk } from "elliptic-jwk";
+import { PrivateJwk, PublicJwk, publicJwkFromPrivate } from "elliptic-jwk";
 import {
   decodeSDJWT,
   DisclosureFrame,
@@ -81,7 +81,11 @@ export const issueSdJwt = async (
   };
   // Optional
   if (holderKeyPair) {
-    opts.cnf = { jwk: holderKeyPair as unknown as SDJWT_JWK };
+    // Ensure only public key is included in cnf (extract public key if private key is provided)
+    const publicKey = (holderKeyPair as any).d
+      ? publicJwkFromPrivate(holderKeyPair as PrivateJwk)
+      : holderKeyPair;
+    opts.cnf = { jwk: publicKey as unknown as SDJWT_JWK };
   }
   return await issueSDJWT(header, payload, disclosureFrame, opts);
 };

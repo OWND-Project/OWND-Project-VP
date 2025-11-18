@@ -112,11 +112,11 @@ export const createSdJwt = async (
     kid: "issuer-key-id",
   };
   if (opt?.publicKeySetting?.type === "jwk") {
-    header.jwk = issueKeyPair;
+    header.jwk = publicJwkFromPrivate(issueKeyPair);
     // todo x5c support
   } else {
-    // default
-    header.jwk = issueKeyPair;
+    // default (use public key only, not private key)
+    header.jwk = publicJwkFromPrivate(issueKeyPair);
   }
   const payload = {
     iss: opt?.iss ?? faker.internet.url(),
