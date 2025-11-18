@@ -13,8 +13,15 @@
 - **Verifier**: クレデンシャルの検証を行うサーバー（本システム）
 - **Holder**: クレデンシャルを保持するウォレットアプリ（ユーザーのIdentity Wallet）
 - **Presentation**: ウォレットがVerifierに提示するクレデンシャルのセット
-- **Presentation Definition**: Verifierが要求するクレデンシャルの条件
+- **DCQL Query**: Verifierが要求するクレデンシャルの条件（OID4VP 1.0で導入）
 - **SD-JWT**: Selective Disclosure JWT（選択的開示）
+
+### OID4VP 1.0への移行
+
+本システムはOID4VP 1.0仕様に準拠しており、以下の変更が適用されています:
+- **Presentation Exchange (PEX)廃止**: Presentation DefinitionとPresentation Submissionは使用されません
+- **DCQL導入**: クレデンシャル要求はDigital Credentials Query Language (DCQL)で記述されます
+- **VP Token構造変更**: DCQL形式（JSON object with credential query ID as key）を使用
 
 ### プロトコルフロー（簡易版）
 
@@ -35,27 +42,21 @@
        │ 3. GET /oid4vp/request?id=...                      │
        │───────────────────────────────────────────────────>│
        │                                                     │
-       │   Request Object (JWT)                             │
+       │   Request Object (JWT with dcql_query)             │
        │<───────────────────────────────────────────────────│
        │                                                     │
-       │ 4. GET /oid4vp/presentation-definition?id=...      │
-       │───────────────────────────────────────────────────>│
+       │ 4. User selects credentials in Wallet              │
        │                                                     │
-       │   Presentation Definition                          │
-       │<───────────────────────────────────────────────────│
-       │                                                     │
-       │ 5. User selects credentials in Wallet              │
-       │                                                     │
-       │ 6. POST /oid4vp/responses                          │
-       │    (vp_token, presentation_submission, state)      │
+       │ 5. POST /oid4vp/responses                          │
+       │    (vp_token as JSON object, state)                │
        │───────────────────────────────────────────────────>│
        │                                                     │
        │   { redirect_uri: "...#response_code=..." }        │
        │<───────────────────────────────────────────────────│
        │                                                     │
-       │ 7. Redirect to response_code                       │
+       │ 6. Redirect to response_code                       │
        │                                                     │
-       │ 8. POST /oid4vp/response-code/exchange             │
+       │ 7. POST /oid4vp/response-code/exchange             │
        │    ?response_code=...                              │
        │    (VP Token検証成功後、自動的にcommitted状態へ)   │
        │───────────────────────────────────────────────────>│
@@ -64,6 +65,8 @@
        │<───────────────────────────────────────────────────│
        │                                                     │
 ```
+
+**注**: OID4VP 1.0では、Presentation Definition エンドポイント (Step 4) は廃止されました。DCQL queryはRequest Object内に直接含まれます。
 
 ## アーキテクチャ
 
@@ -95,7 +98,7 @@
 │  ┌──────────────────────────────────────────┐   │
 │  │  Credential Processors                   │   │
 │  │  - credential2-processor.ts (Affiliation)│   │
-│  │  - input-descriptor.ts                   │   │
+│  │  - extractCredentialFromVpToken (DCQL)   │   │
 │  └──────────────────────────────────────────┘   │
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
@@ -103,7 +106,6 @@
 │  │  - sessions                              │   │
 │  │  - requests                              │   │
 │  │  - response_codes                        │   │
-│  │  - presentation_definitions              │   │
 │  │  - post_states                           │   │
 │  └──────────────────────────────────────────┘   │
 │                                                  │
@@ -119,8 +121,9 @@ OID4VP VerifierはSQLiteデータベースを使用してOID4VP関連データ�
 | `sessions` | OID4VPセッション状態管理（vp_token, credential_dataなど） |
 | `requests` | VP requestメタデータ（response_type, transaction_idなど） |
 | `response_codes` | Authorization response codes（payload, usedフラグ） |
-| `presentation_definitions` | Presentation Definition（JSON形式） |
 | `post_states` | 認証フローの状態追跡（started/committed/expired/invalid_submissionなど） |
+
+**注**: `presentation_definitions`テーブルはOID4VP 1.0への移行に伴い廃止されました（DCQL導入のため）。
 
 ## 認証フロー詳細
 
@@ -141,13 +144,22 @@ const generateAuthRequest = async (presenter) => {
   });
   // request.id, request.transactionId が生成される
 
-  // 2. Presentation Definition生成
-  const pd = await verifier.generatePresentationDefinition(
-    [INPUT_DESCRIPTOR_AFFILIATION],
-    [submissionRequirementAffiliation],
-    "所属証明の提示",
-    "身元を証明するためのクレデンシャルを提示します",
-  );
+  // 2. DCQL Query生成（OID4VP 1.0）
+  const dcqlQuery = verifier.generateDcqlQuery([
+    {
+      id: "affiliation_credential",
+      format: "vc+sd-jwt",
+      meta: {
+        vct_values: ["OrganizationalAffiliationCertificate"],
+      },
+      claims: [
+        { path: ["organization_name"] },
+        { path: ["family_name"] },
+        { path: ["given_name"] },
+        { path: ["portrait"] },
+      ],
+    },
+  ]);
 
   // 3. Verifierリクエスト開始
   const authRequest = await verifier.startRequest(request, clientId, {
@@ -157,7 +169,7 @@ const generateAuthRequest = async (presenter) => {
     requestObject: {
       clientIdScheme: "x509_san_dns",
       responseUri: responseUri,
-      presentationDefinitionUri: `${presentationDefinitionUri}?id=${pd.id}`,
+      dcqlQuery,  // DCQL Query（Presentation Definitionの代わり）
       clientMetadata: generateClientMetadata(),
     },
   });
@@ -194,35 +206,37 @@ const generateAuthRequest = async (presenter) => {
    }
    ```
 
-3. **Presentation Definition**:
+3. **DCQL Query** (OID4VP 1.0):
    ```json
    {
-     "id": "pd-789",
-     "input_descriptors": [
+     "credentials": [
        {
-         "id": "Affiliation",
-         "format": { "vc+sd-jwt": {} },
-         "constraints": {
-           "fields": [
-             { "path": ["$.vc.credentialSubject.organization"], "filter": { "type": "string" } }
-           ]
-         }
+         "id": "affiliation_credential",
+         "format": "vc+sd-jwt",
+         "meta": {
+           "vct_values": ["OrganizationalAffiliationCertificate"]
+         },
+         "claims": [
+           { "path": ["organization_name"] },
+           { "path": ["family_name"] },
+           { "path": ["given_name"] },
+           { "path": ["portrait"] }
+         ]
        }
-     ],
-     "submission_requirements": [
-       { "rule": "pick", "count": 1, "from": "B" }
      ]
    }
    ```
 
 4. **Authorization Request** (JWTとして返却):
    ```
-   oid4vp://localhost/request?client_id=http://localhost&request_uri=http://localhost/oid4vp/request?id=req-123&presentationDefinitionId=pd-789
+   oid4vp://localhost/request?client_id=http://localhost&request_uri=http://localhost/oid4vp/request?id=req-123
    ```
 
 ### 2. リクエストオブジェクト取得（getRequestObject）
 
-**エンドポイント**: `GET /oid4vp/request?id=req-123&presentationDefinitionId=pd-789`
+**エンドポイント**: `GET /oid4vp/request?id=req-123`
+
+**注**: OID4VP 1.0では`presentationDefinitionId`パラメータは不要です（DCQL queryはRequest Object内に含まれます）。
 
 **処理フロー**:
 
