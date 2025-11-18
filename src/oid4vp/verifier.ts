@@ -217,6 +217,9 @@ export const initVerifier = (datastore: VerifierDatastore) => {
   // Removed: generatePresentationDefinition, getPresentationDefinition, getPresentationDefinitionMap
   // These methods are part of the deprecated PEX flow and replaced by DCQL
 
+  /**
+   * @deprecated PEX-related method. Will be removed in Phase 6 when VP Token direct processing is implemented.
+   */
   const getOptionalDescriptor = async (
     inputDescriptorId: string,
     authResponse: AuthResponsePayload,
@@ -233,11 +236,21 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     return result;
   };
 
+  /**
+   * @deprecated PEX-related method. Will be removed in Phase 6 when VP Token direct processing is implemented.
+   */
   const getDescriptor = async (
     inputDescriptorId: string,
     authResponse: AuthResponsePayload,
   ): Promise<Result<{ descriptorMap: DescriptorMap }, DescriptorError>> => {
     const { presentationSubmission } = authResponse;
+
+    if (!presentationSubmission) {
+      return {
+        ok: false,
+        error: { type: "NO_SUBMISSION" },
+      };
+    }
 
     let submission: PresentationSubmission;
     try {
@@ -248,24 +261,11 @@ export const initVerifier = (datastore: VerifierDatastore) => {
         error: { type: "UNEXPECTED_ERROR", cause: err },
       };
     }
-    const pd = await getPresentationDefinition(submission.definitionId);
-    if (!pd) {
-      return {
-        ok: false,
-        error: { type: "NOT_FOUND", subject: "Presentation Definition" },
-      };
-    }
-    const inputDescriptor = pd.inputDescriptors.filter(
-      (item) => item.id === inputDescriptorId,
-    );
-    if (!inputDescriptor || inputDescriptor.length === 0) {
-      return {
-        ok: false,
-        error: { type: "INVALID_SUBMISSION", reason: "No Input Descriptor" },
-      };
-    }
+
+    // Note: getPresentationDefinition removed. This method is deprecated and will be replaced in Phase 6.
+    // For now, we construct a minimal descriptor map without PD validation.
     const descMap = getDescriptorMap(
-      inputDescriptor[0],
+      { id: inputDescriptorId } as any,
       submission.descriptorMap,
     );
     if (!descMap) {

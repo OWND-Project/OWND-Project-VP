@@ -17,7 +17,7 @@ export interface VpRequest {
 
 export interface AuthResponsePayload {
   vpToken: string | string[];
-  presentationSubmission: string;
+  presentationSubmission?: string; // Deprecated: Not used in DCQL flow
   idToken?: string;
 }
 
@@ -211,14 +211,14 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
           type: "INVALID_AUTH_RESPONSE_PAYLOAD",
         };
         const { responseType } = __request!;
-        const { vpToken, presentationSubmission, idToken } =
-          __authResponse.payload;
+        const { vpToken, idToken } = __authResponse.payload;
+        // Note: presentationSubmission validation removed (DCQL flow doesn't use it)
         if (responseType === "vp_token") {
-          if (!vpToken || !presentationSubmission) {
+          if (!vpToken) {
             return { ok: false, error };
           }
         } else if (responseType === "vp_token id_token") {
-          if (!vpToken || !presentationSubmission || !idToken) {
+          if (!vpToken || !idToken) {
             return { ok: false, error };
           }
         } else if (responseType === "id_token") {

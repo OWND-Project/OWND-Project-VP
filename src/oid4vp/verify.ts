@@ -7,6 +7,9 @@ import getLogger from "../services/logging-service.js";
 
 const logger = getLogger();
 
+/**
+ * @deprecated PEX-related function. Will be removed in Phase 6 when VP Token direct processing is implemented.
+ */
 export const getDescriptorMap = (
   inputDescriptor: InputDescriptor,
   descriptorMap: DescriptorMap[],
