@@ -292,8 +292,32 @@ export const initVerifier = (datastore: VerifierDatastore) => {
   ): Promise<Result<Presentation<U>, PresentationError>> => {
     const { vpToken, presentationSubmission } = getAuthResponse()!;
     const opts = verifier ? { verifier } : undefined;
+
+    // Convert DCQL format (Record<string, string[]>) to PEX format (string | string[])
+    // for backward compatibility with deprecated PEX code
+    let legacyVpToken: string | string[];
+    if (typeof vpToken === 'string') {
+      legacyVpToken = vpToken;
+    } else if (Array.isArray(vpToken)) {
+      legacyVpToken = vpToken;
+    } else {
+      // DCQL format: extract first credential query's presentations
+      const queryIds = Object.keys(vpToken);
+      if (queryIds.length === 0) {
+        return {
+          ok: false,
+          error: {
+            type: "INVALID_SUBMISSION",
+            reason: "No credentials in VP Token",
+          },
+        };
+      }
+      const presentations = vpToken[queryIds[0]];
+      legacyVpToken = presentations.length === 1 ? presentations[0] : presentations;
+    }
+
     const extractResult = await extractPresentation<T, U>(
-      vpToken,
+      legacyVpToken,
       descMap,
       opts,
     );

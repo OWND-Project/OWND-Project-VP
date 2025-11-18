@@ -55,8 +55,9 @@ describe("ResponseEndpoint", () => {
   });
 
   describe("#receiveAuthResponse", () => {
-    const vpToken = "dummy-vp-token";
-    const presentationSubmission = "dummy-presentation-submission";
+    // DCQL format: JSON object with credential query ID as key
+    const vpToken = { affiliation_credential: ["dummy-vp-token"] };
+    const presentationSubmission = "dummy-presentation-submission"; // Deprecated but kept for backward compatibility
     const idToken = "dummy-id-token";
     describe("fake state", () => {
       it("should not save auth response", async () => {
@@ -111,7 +112,7 @@ describe("ResponseEndpoint", () => {
           saveResponse: async (response: AuthResponse) => {
             responseIdSetInDatastore = response.id;
             assert.equal(response.requestId, requestId);
-            assert.equal(response.payload.vpToken, vpToken);
+            assert.deepEqual(response.payload.vpToken, vpToken);
             assert.equal(
               response.payload.presentationSubmission,
               presentationSubmission,
@@ -179,7 +180,7 @@ describe("ResponseEndpoint", () => {
               id: responseCode,
               requestId: __requestId,
               payload: {
-                vpToken: "",
+                vpToken: { affiliation_credential: ["dummy-token"] },
                 presentationSubmission: "",
               },
               issuedAt: new Date().getTime() / 1000,
@@ -217,7 +218,7 @@ describe("ResponseEndpoint", () => {
       });
     });
     describe("expired response", () => {
-      const vpToken = faker.string.alpha(10);
+      const vpToken = { affiliation_credential: [faker.string.alpha(10)] };
       const presentationSubmission = faker.string.alpha(10);
       const idToken = faker.string.alpha(10);
       const fakeCommon = {
@@ -268,7 +269,7 @@ describe("ResponseEndpoint", () => {
       });
     });
     describe("true response code", () => {
-      const vpToken = faker.string.alpha(10);
+      const vpToken = { affiliation_credential: [faker.string.alpha(10)] };
       const presentationSubmission = faker.string.alpha(10);
       const idToken = faker.string.alpha(10);
       const fakeCommon = {
@@ -307,7 +308,7 @@ describe("ResponseEndpoint", () => {
           );
         if (result.ok) {
           const { payload } = result.payload;
-          assert.equal(payload.vpToken, vpToken);
+          assert.deepEqual(payload.vpToken, vpToken);
           assert.equal(payload.presentationSubmission, presentationSubmission);
           assert.equal(payload.idToken, idToken);
         } else {
@@ -336,7 +337,7 @@ describe("ResponseEndpoint", () => {
           );
         if (result.ok) {
           const { payload } = result.payload;
-          assert.equal(payload.vpToken, vpToken);
+          assert.deepEqual(payload.vpToken, vpToken);
           assert.equal(payload.presentationSubmission, presentationSubmission);
           assert.equal(payload.idToken, idToken);
         } else {

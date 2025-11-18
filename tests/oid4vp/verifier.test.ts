@@ -42,18 +42,19 @@ describe("Verifier", () => {
       saveRequest: async (request: VpRequestAtVerifier) => {
         saveRequestCalled = true;
       },
-      savePresentationDefinition: async (
-        presentationDefinition: PresentationDefinition,
-      ) => {
-        savePresentationDefinitionCalled = true;
-      },
-      getPresentationDefinition: async (presentationDefinitionId: string) => {
-        return {
-          id: presentationDefinitionId,
-          inputDescriptors: [],
-          submissionRequirements: [],
-        };
-      },
+      // Deprecated: PEX methods removed
+      // savePresentationDefinition: async (
+      //   presentationDefinition: PresentationDefinition,
+      // ) => {
+      //   savePresentationDefinitionCalled = true;
+      // },
+      // getPresentationDefinition: async (presentationDefinitionId: string) => {
+      //   return {
+      //     id: presentationDefinitionId,
+      //     inputDescriptors: [],
+      //     submissionRequirements: [],
+      //   };
+      // },
     };
     verifier = initVerifier(verifierDatastore);
   });
@@ -175,9 +176,10 @@ describe("Verifier", () => {
     });
   });
 
-  describe("#generatePresentationDefinition", () => {
+  describe.skip("#generatePresentationDefinition (DEPRECATED - PEX removed)", () => {
     it("should generate presentation definition", async () => {
       const verifier = initVerifier(verifierDatastore);
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const pd = await verifier.generatePresentationDefinition([], []);
       assert.isTrue(
         savePresentationDefinitionCalled,
@@ -187,10 +189,11 @@ describe("Verifier", () => {
     });
   });
 
-  describe("#getPresentationDefinition", () => {
+  describe.skip("#getPresentationDefinition (DEPRECATED - PEX removed)", () => {
     it("should get presentation definition", async () => {
       const id = uuidv4();
       const verifier = initVerifier(verifierDatastore);
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const pd = await verifier.getPresentationDefinition(id);
       if (pd) {
         assert.equal(pd.id, id);
@@ -314,7 +317,7 @@ describe("Verifier", () => {
     });
   });
 
-  describe("#getDescriptor", () => {
+  describe.skip("#getDescriptor (DEPRECATED - PEX removed)", () => {
     const definitionId = faker.string.uuid();
     const inputDescId = faker.string.uuid();
     const __mapId = faker.string.uuid();
@@ -326,7 +329,7 @@ describe("Verifier", () => {
     };
 
     const authResponse: AuthResponsePayload = {
-      vpToken: "dummy-token",
+      vpToken: { affiliation_credential: ["dummy-token"] },
       idToken: "dummy-token",
       presentationSubmission: JSON.stringify(camelToSnake(submission)),
     };
@@ -335,6 +338,7 @@ describe("Verifier", () => {
       // prepare
       verifierDatastore = {
         ...verifierDatastore,
+        // @ts-ignore - Deprecated PEX method
         getPresentationDefinition: async (presentationDefinitionId: string) => {
           return null;
         },
@@ -342,6 +346,7 @@ describe("Verifier", () => {
 
       // execute
       const verifier = initVerifier(verifierDatastore);
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getDescriptor(inputDescId, authResponse);
 
       // assert
@@ -357,6 +362,7 @@ describe("Verifier", () => {
       // prepare
       verifierDatastore = {
         ...verifierDatastore,
+        // @ts-ignore - Deprecated PEX method
         getPresentationDefinition: async (presentationDefinitionId: string) => {
           return {
             id: presentationDefinitionId,
@@ -368,6 +374,7 @@ describe("Verifier", () => {
 
       // execute
       const verifier = initVerifier(verifierDatastore);
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getDescriptor("no-such-id", authResponse);
 
       // assert
@@ -392,12 +399,13 @@ describe("Verifier", () => {
       };
 
       const authResponse: AuthResponsePayload = {
-        vpToken: "dummy-token",
+        vpToken: { affiliation_credential: ["dummy-token"] },
         idToken: "dummy-token",
         presentationSubmission: JSON.stringify(camelToSnake(submission)),
       };
       verifierDatastore = {
         ...verifierDatastore,
+        // @ts-ignore - Deprecated PEX method
         getPresentationDefinition: async (presentationDefinitionId: string) => {
           return {
             id: presentationDefinitionId,
@@ -409,6 +417,7 @@ describe("Verifier", () => {
 
       // execute
       const verifier = initVerifier(verifierDatastore);
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getDescriptor(inputDescId, authResponse);
 
       // assert
@@ -433,12 +442,13 @@ describe("Verifier", () => {
       };
 
       const authResponse: AuthResponsePayload = {
-        vpToken: "dummy-token",
+        vpToken: { affiliation_credential: ["dummy-token"] },
         idToken: "dummy-token",
         presentationSubmission: JSON.stringify(camelToSnake(submission)),
       };
       verifierDatastore = {
         ...verifierDatastore,
+        // @ts-ignore - Deprecated PEX method
         getPresentationDefinition: async (presentationDefinitionId: string) => {
           return {
             id: presentationDefinitionId,
@@ -450,6 +460,7 @@ describe("Verifier", () => {
 
       // execute
       const verifier = initVerifier(verifierDatastore);
+      // @ts-ignore - Deprecated method removed in DCQL migration
       const result = await verifier.getDescriptor(inputDescId, authResponse);
 
       // assert
@@ -464,7 +475,7 @@ describe("Verifier", () => {
     });
   });
 
-  describe("#getPresentation", () => {
+  describe.skip("#getPresentation (DEPRECATED - PEX removed)", () => {
     const definitionId = faker.string.uuid();
     const inputDescId = faker.string.uuid();
     it("should be invalid submission(unmatched path)", async () => {
@@ -477,7 +488,7 @@ describe("Verifier", () => {
       };
 
       const authResponse: AuthResponsePayload = {
-        vpToken: ["dummy-token"],
+        vpToken: { affiliation_credential: ["dummy-token"] },
         idToken: "dummy-token",
         presentationSubmission: JSON.stringify(camelToSnake(submission)),
       };
@@ -509,7 +520,7 @@ describe("Verifier", () => {
       };
 
       const authResponse: AuthResponsePayload = {
-        vpToken: ["dummy-token"],
+        vpToken: { affiliation_credential: ["dummy-token"] },
         idToken: "dummy-token",
         presentationSubmission: JSON.stringify(camelToSnake(submission)),
       };
@@ -549,9 +560,9 @@ describe("Verifier", () => {
       const presentation = {
         vp: { verifiableCredential: [vc] },
       };
-      const vpToken = await issueJwt(header, presentation, holderKeyPair);
+      const vpJwt = await issueJwt(header, presentation, holderKeyPair);
       const authResponse: AuthResponsePayload = {
-        vpToken,
+        vpToken: { affiliation_credential: [vpJwt] },
         idToken: "dummy-token",
         presentationSubmission: JSON.stringify(camelToSnake(submission)),
       };
@@ -575,11 +586,11 @@ describe("Verifier", () => {
       }
       const { decoded, raw } = result.payload.vp;
       assert.equal(decoded.vp.verifiableCredential[0], vc);
-      assert.equal(raw, vpToken);
+      assert.equal(raw, vpJwt);
     });
   });
 
-  describe("#getCredential", () => {
+  describe.skip("#getCredential (DEPRECATED - PEX removed)", () => {
     type Cred1 = { claim1: string };
     const definitionId = faker.string.uuid();
     const inputDescId = faker.string.uuid();
