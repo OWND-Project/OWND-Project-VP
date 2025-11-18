@@ -319,7 +319,7 @@ const extractCredentialFromVpToken = async <T, U>(
 | 6.2 | Interactor 更新 | ✅ 完了 | 2025-11-18 |
 | 6.3 | Credential Processor 更新 | ✅ 完了 | 2025-11-18 |
 | 7 | テスト修正 | ✅ 完了 | 2025-11-18 |
-| 8 | ドキュメント更新 | 🔄 進行中 | - |
+| 8 | ドキュメント更新 | ✅ 完了 | 2025-11-18 |
 
 ## 注意事項
 
