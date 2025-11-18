@@ -290,7 +290,12 @@ export const initOID4VPInteractor = (
 
     logger.info("extractCredentialFromVpToken start");
     // Process affiliation credential using DCQL flow (direct VP Token extraction)
-    const cred = await extractCredentialFromVpToken(payload.vpToken, nonce);
+    const credentialQueryId = "affiliation_credential";
+    const cred = await extractCredentialFromVpToken(
+      payload.vpToken,
+      credentialQueryId,
+      nonce
+    );
     if (!cred.ok) {
       logger.info(`credential extraction failed : ${JSON.stringify(cred.error)}`);
       await updateState2InvalidSubmission(requestId);

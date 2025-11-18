@@ -16,7 +16,7 @@ export interface VpRequest {
 }
 
 export interface AuthResponsePayload {
-  vpToken: string | string[];
+  vpToken: Record<string, string[]>; // DCQL: JSON object with credential query ID as key
   presentationSubmission?: string; // Deprecated: Not used in DCQL flow
   idToken?: string;
 }

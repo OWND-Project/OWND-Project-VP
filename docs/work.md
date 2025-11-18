@@ -54,3 +54,10 @@ Presentation Exchange(PEX)の仕様が実装観点から複雑すぎるという
 - Presentation Submissionの廃止
     - PEX廃止に伴い、response endpointのペイロードがvp_tokenのみに変更
     - descriptor_mapを用いてクレデンシャルを取り出す処理は無くなりました
+
+- vp_tokenからクレデンシャルを抽出する方法は以下のルール
+
+    ```
+    vp_token:
+    REQUIRED. This is a JSON-encoded object containing entries where the key is the id value used for a Credential Query in the DCQL query and the value is an array of one or more Presentations that match the respective Credential Query. When multiple is omitted, or set to false, the array MUST contain only one Presentation. There MUST NOT be any entry in the JSON-encoded object for optional Credential Queries when there are no matching Credentials for the respective Credential Query. Each Presentation is represented as a string or object, depending on the format as defined in Appendix B. The same rules as above apply for encoding the Presentations.
+    ```

@@ -18,17 +18,26 @@ const logger = getLogger();
 
 /**
  * Extract SD-JWT credential directly from VP Token (DCQL flow)
- * @param vpToken - VP Token string or array
+ * @param vpToken - VP Token in DCQL format (JSON object with credential query ID as key)
+ * @param credentialQueryId - The credential query ID to extract
  * @param nonce - Expected nonce value
  * @returns Affiliation JWT and icon if successful
  */
 export const extractCredentialFromVpToken = async (
-  vpToken: string | string[],
+  vpToken: Record<string, string[]>,
+  credentialQueryId: string,
   nonce: string,
 ): Promise<Result<{ affiliation?: string; icon?: string }, NotSuccessResult>> => {
   try {
-    // Handle VP Token (can be string or array in DCQL)
-    const token = Array.isArray(vpToken) ? vpToken[0] : vpToken;
+    // DCQL format: JSON object with credential query ID as key
+    const presentations = vpToken[credentialQueryId];
+
+    if (!presentations || presentations.length === 0) {
+      logger.info(`No credential found for query ID: ${credentialQueryId}`);
+      return { ok: true, payload: { affiliation: undefined, icon: undefined } };
+    }
+
+    const token = presentations[0];
 
     if (!token) {
       logger.info('VP Token is empty');
@@ -39,12 +48,12 @@ export const extractCredentialFromVpToken = async (
     const decoded = decodeSDJWT(token);
 
     // Verify key binding JWT contains correct nonce
-    if (!decoded.kbJwt) {
+    if (!decoded.keyBindingJWT) {
       logger.info('Key binding JWT is missing');
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
     }
 
-    const kbPayload = decodeJwt<{ nonce: string }>(decoded.kbJwt);
+    const kbPayload = decodeJwt<{ nonce: string }>(decoded.keyBindingJWT);
     if (kbPayload.nonce !== nonce) {
       logger.info(`Nonce mismatch: expected ${nonce}, got ${kbPayload.nonce}`);
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
