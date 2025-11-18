@@ -43,23 +43,17 @@ export const authResponsePresenter = (
 };
 export const exchangeResponseCodePresenter: ExchangeResponseCodePresenter<{
   requestId: string;
-  claim: {};
-}> = (requestId, comment, url, claimer) => {
-  const claim = {
-    url,
+  claimer: {};
+}> = (requestId, claimer) => {
+  return {
+    requestId,
     claimer: {
       id_token: claimer.id_token,
       sub: claimer.sub,
       icon: claimer.icon,
       organization: claimer.organization,
     },
-    comment: comment,
   };
-  return { requestId, claim };
-};
-
-export const confirmCommentPresenter = (newClaimId: string) => {
-  return { id: newClaimId };
 };
 
 export const postStatePresenter: PostStatePresenter<

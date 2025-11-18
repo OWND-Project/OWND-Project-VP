@@ -216,7 +216,6 @@ export const initSessionRepository = (db: Database) => {
   const putWaitCommitData = async (
     requestId: string,
     idToken: string,
-    claimJwt: string,
     affiliationJwt?: string,
     opts?: EntityWithLifeCycleOption
   ) => {
@@ -225,7 +224,6 @@ export const initSessionRepository = (db: Database) => {
 
     const credentialData = {
       idToken,
-      claimJwt,
       affiliationJwt,
     };
 
@@ -244,7 +242,6 @@ export const initSessionRepository = (db: Database) => {
       id: requestId,
       data: {
         idToken,
-        claimJwt,
         affiliationJwt,
       },
       issuedAt,

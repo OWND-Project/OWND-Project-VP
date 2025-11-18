@@ -11,7 +11,6 @@ import {
   PresentationSubmission,
 } from "../../src/oid4vp/index.js";
 import {
-  INPUT_DESCRIPTOR_ID1,
   INPUT_DESCRIPTOR_ID2,
 } from "../../src/usecases/internal/input-descriptor.js";
 import { createIdToken, createKeyPair, createSdJwt } from "../test-utils.js";
@@ -66,7 +65,6 @@ export const initPostFixtureHandler = (interactor: OID4VPInteractor) => {
   const startFlow = async () => {
     setupEnv();
     const result = await interactor.generateAuthRequest<Ret>(
-      { url: faker.internet.url(), comment: "test comment", boolValue: 1 },
       authRequest4PostPresenter,
     );
     return (result as OkResult<Ret>).payload;
@@ -135,15 +133,10 @@ export const initPostFixtures = () => {
     const { requestId, nonce, definitionId } = vpRequest;
 
     // ------------------------ presentation submission -------------------------
-    const w3cVpPath = "$.vp.verifiableCredential[0]";
     const map1 = {
-      id: INPUT_DESCRIPTOR_ID1,
+      id: INPUT_DESCRIPTOR_ID2,
       path: "$",
-      format: "jwt_vp_json",
-      path_nested: {
-        path: w3cVpPath,
-        format: "jwt_vc_json",
-      },
+      format: "vc+sd-jwt",
     };
     const submission: PresentationSubmission = {
       id: faker.string.uuid(),
@@ -155,23 +148,18 @@ export const initPostFixtures = () => {
     const keyPair = createKeyPair("secp256k1");
     const idToken = await createIdToken({ privateJwk: keyPair, nonce });
 
-    // ------------------------ comment vc -------------------------
-    const { credential, url } = genCommentData();
-    const vc = await issueJwt(header, credential, issuerKeyPair);
-    const presentation = {
-      nonce,
-      vp: { verifiableCredential: [vc] },
-    };
-    const vpToken = await issueJwt(
-      { ...header, jwk: holderKeyPair },
-      presentation,
-      holderKeyPair,
-    );
+    // ------------------------ affiliation vc -------------------------
+    const { claims, disClosureFrame } = genAffiliationData();
+    const affiliation = await createSdJwt(claims, disClosureFrame, {
+      holderPublicJwk: holderKeyPair,
+    });
+    const kbJwt = await issueJwt({ alg: "ES256" }, { nonce }, holderKeyPair);
+    const vpToken = affiliation + kbJwt;
 
     // use value when assertion
     memo.response1.claim.idToken = idToken;
-    memo.response1.url = url;
-    memo.response1.comment = vc;
+    memo.response1.claim.icon = claims.portrait;
+    memo.response1.claim.organization = vpToken;
 
     return {
       state: requestId,
@@ -185,43 +173,20 @@ export const initPostFixtures = () => {
     const { requestId, nonce, definitionId } = vpRequest;
 
     // ------------------------ presentation submission -------------------------
-    const w3cVpPath = "$.vp.verifiableCredential[0]";
     const map1 = {
-      id: INPUT_DESCRIPTOR_ID1,
-      path: "$[0]",
-      format: "jwt_vp_json",
-      path_nested: {
-        path: w3cVpPath,
-        format: "jwt_vc_json",
-      },
-    };
-    const map2 = {
       id: INPUT_DESCRIPTOR_ID2,
-      path: "$[1]",
+      path: "$",
       format: "vc+sd-jwt",
     };
     const submission: PresentationSubmission = {
       id: faker.string.uuid(),
       definitionId: definitionId!,
-      descriptorMap: [map1, map2],
+      descriptorMap: [map1],
     };
 
     // ------------------------ id_token -------------------------
     const keyPair = createKeyPair("secp256k1");
     const idToken = await createIdToken({ privateJwk: keyPair, nonce });
-
-    // ------------------------ comment vc -------------------------
-    const { credential, url } = genCommentData();
-    const vc = await issueJwt(header, credential, issuerKeyPair);
-    const presentation = {
-      nonce,
-      vp: { verifiableCredential: [vc] },
-    };
-    const vpToken = await issueJwt(
-      { ...header, jwk: holderKeyPair },
-      presentation,
-      holderKeyPair,
-    );
 
     // ------------------------ affiliation vc -------------------------
     const { claims, disClosureFrame } = genAffiliationData();
@@ -229,40 +194,21 @@ export const initPostFixtures = () => {
       holderPublicJwk: holderKeyPair,
     });
     const kbJwt = await issueJwt({ alg: "ES256" }, { nonce }, holderKeyPair);
-    const vpToken2 = affiliation + kbJwt;
+    const vpToken = affiliation + kbJwt;
 
     // use value when assertion
     memo.response2.claim.idToken = idToken;
-    memo.response2.url = url;
-    memo.response2.comment = vc;
     memo.response2.claim.icon = claims.portrait;
-    memo.response2.claim.organization = vpToken2;
+    memo.response2.claim.organization = vpToken;
 
     return {
       state: requestId,
-      vp_token: [vpToken, vpToken2],
+      vp_token: vpToken,
       id_token: idToken,
       presentation_submission: JSON.stringify(camelToSnake(submission)),
     };
   };
   return { memo, response1, response2 };
-};
-
-/**
- *
- */
-const genCommentData = () => {
-  const url = faker.internet.url();
-  const credential = {
-    vc: {
-      credentialSubject: {
-        url,
-        comment: "test",
-        boolValue: 1,
-      },
-    },
-  };
-  return { url, credential };
 };
 
 /**

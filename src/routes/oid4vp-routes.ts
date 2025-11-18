@@ -6,15 +6,12 @@ import { initOID4VPInteractor } from "../usecases/oid4vp-interactor.js";
 import {
   authRequestPresenter,
   authResponsePresenter,
-  confirmCommentPresenter,
   exchangeResponseCodePresenter,
   postStatePresenter,
 } from "./presenters.js";
-import { WaitCommitData } from "../usecases/types.js";
 import {
   handleError,
   missingBody,
-  missingBody2,
   missingHeader,
   toErrorBody,
 } from "./error-handler.js";
@@ -25,7 +22,6 @@ import {
   initPostStateRepository,
   initSessionRepository,
 } from "../usecases/oid4vp-repository.js";
-import { Result } from "../tool-box/index.js";
 import getLogger from "../services/logging-service.js";
 
 const logger = getLogger();
@@ -66,14 +62,8 @@ export const routes = async (appContext: AppContext) => {
   console.info("responseEndpointPath: ", responseEndpointPath);
 
   router.post(`/${apiDomain}/auth-request`, koaBody(), async (ctx) => {
-    if (!ctx.request.body) {
-      missingBody2(ctx);
-      return;
-    }
-    const payload = ctx.request.body;
     const requestHost = process.env.OID4VP_REQUEST_HOST || "INVALID_REQUEST_HOST";
     const result = await interactor.generateAuthRequest<Ret>(
-      payload,
       authRequestPresenter,
     );
     if (result.ok) {
@@ -196,9 +186,9 @@ export const routes = async (appContext: AppContext) => {
       );
 
       if (result.ok) {
-        const { requestId, claim } = result.payload;
+        const { requestId, claimer } = result.payload;
         ctx.status = 200;
-        ctx.body = claim;
+        ctx.body = claimer;
         ctx.session!.request_id = requestId;
       } else {
         const { statusCode, body } = handleError(result.error);
@@ -211,34 +201,7 @@ export const routes = async (appContext: AppContext) => {
       );
     },
   );
-  router.post(`/${apiDomain}/comment/confirm`, koaBody(), async (ctx) => {
-    const requestId = ctx.session?.request_id ?? undefined;
-    const result = await interactor.confirmComment<{ id: string }>(
-      requestId,
-      confirmCommentPresenter,
-    );
-    if (result.ok) {
-      ctx.session = null; // https://github.com/koajs/session?tab=readme-ov-file#destroying-a-session
-      ctx.status = 200;
-      ctx.body = result.payload;
-    } else {
-      const { statusCode, body } = handleError(result.error);
-      ctx.status = statusCode;
-      ctx.body = body;
-    }
-  });
-  router.post(`/${apiDomain}/comment/cancel`, koaBody(), async (ctx) => {
-    const requestId = ctx.session?.request_id ?? undefined;
-    const result = await interactor.cancelComment(requestId);
-    if (result.ok) {
-      ctx.status = 204;
-    } else {
-      const { statusCode, body } = handleError(result.error);
-      ctx.status = statusCode;
-      ctx.body = body;
-    }
-  });
-  router.get(`/${apiDomain}/comment/states`, koaBody(), async (ctx) => {
+  router.get(`/${apiDomain}/states`, koaBody(), async (ctx) => {
     const requestId = ctx.session?.request_id ?? undefined;
     if (!requestId) {
       const { statusCode, body } = missingHeader();
@@ -248,13 +211,10 @@ export const routes = async (appContext: AppContext) => {
     }
     const state = await interactor.getStates(requestId, postStatePresenter);
     if (state) {
-      // PR https://github.com/datasign-inc/mic2024-backend/pull/72 の修正では不足であったため、
-      // 追加で以下修正をするものです. 正常に投稿等が完了した場合は、セッションを無効化します。
-      // こうすることで、コメントを連投する場合など次回移行の操作のstateが新たになるようにします。
+      // VP Token検証完了後、セッションを無効化
       if (state.value === "committed") {
         ctx.session = null;
       }
-      //
       ctx.status = 200;
       ctx.body = state;
     } else {

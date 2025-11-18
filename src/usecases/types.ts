@@ -11,8 +11,6 @@ export type AuthResponsePresenter<T> = (
 ) => T;
 export type ExchangeResponseCodePresenter<T> = (
   requestId: string,
-  comment: string,
-  url: any,
   claimer: {
     sub: string;
     id_token: string;
@@ -20,7 +18,6 @@ export type ExchangeResponseCodePresenter<T> = (
     icon?: string;
   },
 ) => T;
-export type CommitDataPresenter<T> = (newClaimId: string) => T;
 export type PostStatePresenter<T> = (state: PostState | null) => T;
 
 export interface Entity {
@@ -40,7 +37,6 @@ export interface RequestId extends EntityWithLifeCycle {
 export interface WaitCommitData extends EntityWithLifeCycle {
   data: {
     idToken: string;
-    claimJwt: string;
     affiliationJwt?: string;
   };
 }

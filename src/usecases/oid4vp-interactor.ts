@@ -11,29 +11,22 @@ import {
 import {
   AuthRequestPresenter,
   AuthResponsePresenter,
-  CommitDataPresenter,
   ExchangeResponseCodePresenter,
   PostStatePresenter,
-  WaitCommitData,
 } from "./types.js";
 import {
-  initSessionRepository,
   PostStateRepository,
   SessionRepository,
 } from "./oid4vp-repository.js";
 import {
   INPUT_DESCRIPTOR_AFFILIATION,
-  INPUT_DESCRIPTOR_ID1,
   INPUT_DESCRIPTOR_ID2,
-  inputDescriptorClaim,
   submissionRequirementAffiliation,
-  submissionRequirementClaim,
 } from "./internal/input-descriptor.js";
 import {
   handleEndpointError,
   handleRequestError,
 } from "./internal/error-handlers.js";
-import { processCredential1 } from "./internal/credential1-processor.js";
 import { processCredential2 } from "./internal/credential2-processor.js";
 import { NotSuccessResult } from "../types/app-types.js";
 import { certificateStr2Array } from "../tool-box/x509/x509.js";
@@ -67,7 +60,6 @@ export const initOID4VPInteractor = (
       redirectUriReturnedByResponseUri:
         process.env.OID4VP_REDIRECT_URI_RETURNED_BY_RESPONSE_URI || "",
       apiHost: process.env.API_HOST || "http://localhost:3000",
-      mainNodeHost: process.env.MAIN_NODE_HOST || "http://localhost:3000",
       expiredIn: {
         requestAtVerifier: Number(
           process.env.OID4VP_REQUEST_EXPIRED_IN_AT_VERIFIER || "600",
@@ -77,7 +69,6 @@ export const initOID4VPInteractor = (
         ),
         response: Number(process.env.OID4VP_RESPONSE_EXPIRED_IN || "600"),
         postSession: Number(process.env.POST_SESSION_EXPIRED_IN || "600"),
-        postState: Number(process.env.POST_STATE_EXPIRED_IN || "600"),
       },
     };
   };
@@ -86,47 +77,34 @@ export const initOID4VPInteractor = (
   const responseUri = Env().responseUri;
 
   /**
-   *
-   * @param payload
+   * Generate OID4VP authorization request
    * @param presenter
    */
   const generateAuthRequest = async <T>(
-    payload: {
-      url: string;
-      comment: string;
-      boolValue: number;
-    },
     presenter: AuthRequestPresenter<T>,
   ): Promise<Result<T, NotSuccessResult>> => {
     logger.info("generateAuthRequest start");
-    const { url, comment, boolValue } = payload;
-    if (!url || 2 < boolValue || boolValue < 0) {
-      return { ok: false, error: { type: "INVALID_PARAMETER" } };
-    }
 
     const responseType = "vp_token id_token";
     // initiate transaction
     const request = await responseEndpoint.initiateTransaction({
       responseType,
       redirectUriReturnedByResponseUri:
-        Env().redirectUriReturnedByResponseUri + "?type=post_comment",
+        Env().redirectUriReturnedByResponseUri,
       expiredIn: Env().expiredIn.requestAtResponseEndpoint,
     });
 
-    // generate pd and pd_id
+    // generate presentation definition for affiliation credential only
     const pd = await verifier.generatePresentationDefinition(
-      [
-        inputDescriptorClaim(url, comment, boolValue),
-        INPUT_DESCRIPTOR_AFFILIATION,
-      ],
-      [submissionRequirementClaim, submissionRequirementAffiliation],
-      "真偽コメントに署名します",
-      "投稿に信頼性を持たせるために身元を証明するクレデンシャルと共に真偽表明を行います",
+      [INPUT_DESCRIPTOR_AFFILIATION],
+      [submissionRequirementAffiliation],
+      "所属証明の提示",
+      "身元を証明するためのクレデンシャルを提示します",
     );
     const clientIdScheme = Env().clientIdScheme;
     const f = async () => {
       if (clientIdScheme === "x509_san_dns") {
-        const requestUri = `${Env().requestUri}?type=post_comment&id=${request.id}&presentationDefinitionId=${pd.id}`;
+        const requestUri = `${Env().requestUri}?id=${request.id}&presentationDefinitionId=${pd.id}`;
         return { clientId, requestUri };
       } else {
         const presentationDefinitionUri =
@@ -149,10 +127,6 @@ export const initOID4VPInteractor = (
       }
     };
     const vpRequest = await f();
-
-    await stateRepository.putState(request.id, "started", {
-      expiredIn: Env().expiredIn.postState,
-    });
 
     logger.info("generateAuthRequest end");
     return {
@@ -248,13 +222,12 @@ export const initOID4VPInteractor = (
   };
 
   const updateState2InvalidSubmission = async (requestId: string) => {
-    await stateRepository.putState(requestId, "invalid_submission", {
-      expiredIn: Env().expiredIn.postState,
-    });
+    await stateRepository.putState(requestId, "invalid_submission");
   };
 
   /**
-   *
+   * Exchange response code for auth response and process credential
+   * VP Token検証成功後、自動的にcommitted状態に遷移
    * @param responseCode
    * @param transactionId
    * @param presenter
@@ -291,32 +264,18 @@ export const initOID4VPInteractor = (
     // id token (SIOPv2 validation removed - use standard OID4VP validation)
     const { idToken } = payload;
 
-    logger.info("processCredential1 start");
-    // credential 1
-    const cred1 = await processCredential1(
-      verifier,
-      INPUT_DESCRIPTOR_ID1,
-      payload,
-      nonce,
-    );
-    if (!cred1.ok) {
-      logger.info(`cred1 is not ok : ${JSON.stringify(cred1.error)}`);
-      await updateState2InvalidSubmission(requestId);
-      return { ok: false, error: cred1.error };
-    }
-
     logger.info("processCredential2 start");
-    // credential 2
-    const cred2 = await processCredential2(
+    // Process affiliation credential
+    const cred = await processCredential2(
       verifier,
       INPUT_DESCRIPTOR_ID2,
       payload,
       nonce,
     );
-    if (!cred2.ok) {
-      logger.info(`cred2 is not ok : ${JSON.stringify(cred2.error)}`);
+    if (!cred.ok) {
+      logger.info(`credential is not ok : ${JSON.stringify(cred.error)}`);
       await updateState2InvalidSubmission(requestId);
-      return { ok: false, error: cred2.error };
+      return { ok: false, error: cred.error };
     }
 
     // consume vp_token
@@ -332,25 +291,23 @@ export const initOID4VPInteractor = (
     }
 
     // Extract credential data
-    const comment = cred1.payload.raw;
-    const { affiliation, icon } = cred2.payload;
+    const { affiliation, icon } = cred.payload;
 
     // Save session data
     await sessionRepository.putWaitCommitData(
       requestId,
       idToken!,
-      comment,
       affiliation,
       { expiredIn: Env().expiredIn.postSession },
     );
 
-    // Update post state
-    await stateRepository.putState(requestId, "consumed");
+    // VP Token検証成功後、自動的にcommitted状態に遷移
+    await stateRepository.putState(requestId, "committed");
 
     logger.info("consumeAuthResponse end");
     return {
       ok: true,
-      payload: presenter(requestId, comment, undefined, {
+      payload: presenter(requestId, {
         sub: "", // ID token validation removed
         id_token: idToken!,
         icon,
@@ -360,88 +317,7 @@ export const initOID4VPInteractor = (
   };
 
   /**
-   *
-   * @param requestId
-   * @param presenter
-   */
-  const confirmComment = async <T>(
-    requestId: string | undefined,
-    presenter: CommitDataPresenter<T>,
-  ): Promise<Result<T, NotSuccessResult>> => {
-    if (!requestId) {
-      return {
-        ok: false,
-        error: {
-          type: "INVALID_HEADER",
-          message: "request-id should be sent.",
-        },
-      };
-    }
-    const getData = await getSessionData(requestId, sessionRepository);
-    if (getData.ok) {
-      const { claimJwt, idToken, affiliationJwt } = getData.payload.data;
-      const register = async () => {
-        // https://node.boolcheck.com/database/claims
-        const input = Env().mainNodeHost + "/database/claims";
-        const body = JSON.stringify({
-          comment: claimJwt,
-          id_token: idToken,
-          affiliation: affiliationJwt,
-        });
-        try {
-          const response = await fetch(input, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json; charset=utf-8",
-            },
-            body,
-          });
-          const data = (await response.json()) as unknown as { id: string };
-          return data.id;
-        } catch (error) {
-          console.error(error);
-          return undefined;
-        }
-      };
-      const newId = await register();
-      if (newId) {
-        await stateRepository.putState(requestId, "committed");
-        return { ok: true, payload: presenter(newId) };
-      } else {
-        return { ok: false, error: { type: "UNEXPECTED_ERROR" } };
-      }
-    } else {
-      return { ok: false, error: getData.error };
-    }
-  };
-
-  /**
-   *
-   * @param requestId
-   */
-  const cancelComment = async (
-    requestId: string | undefined,
-  ): Promise<VoidResult<NotSuccessResult>> => {
-    if (!requestId) {
-      return {
-        ok: false,
-        error: {
-          type: "INVALID_HEADER",
-          message: "session-id should be sent.",
-        },
-      };
-    }
-    const getData = await getSessionData(requestId, sessionRepository);
-    if (getData.ok) {
-      await stateRepository.putState(requestId, "canceled");
-      return { ok: true };
-    } else {
-      return { ok: false, error: getData.error };
-    }
-  };
-
-  /**
-   *
+   * Get current state of the request
    * @param requestId
    * @param presenter
    */
@@ -459,37 +335,10 @@ export const initOID4VPInteractor = (
     getPresentationDefinition,
     receiveAuthResponse,
     exchangeAuthResponse,
-    confirmComment,
-    cancelComment,
     getStates,
   };
 };
 
-export type CommitData = (
-  data: WaitCommitData,
-) => Promise<Result<{ newId: string }, NotSuccessResult>>;
-
-const getSessionData = async (
-  sessionId: string,
-  sessionRepository: ReturnType<typeof initSessionRepository>,
-): Promise<
-  Result<WaitCommitData, { type: "NOT_FOUND" | "EXPIRED"; message: string }>
-> => {
-  const getData = await sessionRepository.getSession<WaitCommitData>(sessionId);
-  if (getData.ok) {
-    return getData;
-  } else {
-    const { type } = getData.error;
-    let message: string = "";
-    if (type === "NOT_FOUND") {
-      message = "session data is not found.";
-    }
-    if (type === "EXPIRED") {
-      message = "session data is expired.";
-    }
-    return { ok: false, error: { type, message } };
-  }
-};
 
 /**
  *
@@ -521,8 +370,4 @@ export interface EntityWithLifeCycleOption {
 }
 export interface PostStateOption extends EntityWithLifeCycleOption {
   targetId?: string;
-}
-
-interface IdGenerable {
-  generateId?: () => string;
 }
