@@ -43,7 +43,7 @@ Content-Type: application/json
 
 ```json
 {
-  "value": "oid4vp://example.com/request?client_id=http://localhost:3000&request_uri=http://localhost:3000/oid4vp/request%3Fid%3Dreq_abc123%26presentationDefinitionId%3Dpd_xyz789"
+  "value": "oid4vp://example.com/request?client_id=http://localhost:3000&request_uri=http://localhost:3000/oid4vp/request%3Fid%3Dreq_abc123"
 }
 ```
 
@@ -65,7 +65,7 @@ Content-Type: application/json
 | 400 | `INVALID_PARAMETER` | リクエストボディが不正 |
 
 **処理フロー**:
-1. 所属証明クレデンシャル用のPresentation Definitionを生成
+1. 所属証明クレデンシャル用のDCQL Queryを生成
 2. post_statesテーブルに状態を保存（状態: `started`）
 3. Authorization Requestを生成
 4. セッションに`request_id`を設定
@@ -82,7 +82,7 @@ Identity Walletが使用するRequest Objectを取得します。
 **リクエスト**:
 
 ```http
-GET /oid4vp/request?id=req_abc123&presentationDefinitionId=pd_xyz789 HTTP/1.1
+GET /oid4vp/request?id=req_abc123 HTTP/1.1
 ```
 
 **クエリパラメータ**:
@@ -90,28 +90,43 @@ GET /oid4vp/request?id=req_abc123&presentationDefinitionId=pd_xyz789 HTTP/1.1
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|---|------|------|
 | `id` | string | ✓ | リクエストID（UUIDv4） |
-| `presentationDefinitionId` | string | ✓ | Presentation Definition ID |
 
 **レスポンス** (200 OK):
 
 ```json
 {
-  "response_type": "vp_token",
+  "response_type": "vp_token id_token",
   "response_mode": "direct_post",
   "response_uri": "http://localhost:3000/oid4vp/responses",
   "client_id": "http://localhost:3000",
+  "client_id_scheme": "x509_san_dns",
   "nonce": "n-0S6_WzA2Mj",
   "state": "req_abc123",
-  "presentation_definition": {
-    "id": "pd_xyz789",
-    "input_descriptors": [...]
+  "dcql_query": {
+    "credentials": [
+      {
+        "id": "affiliation_credential",
+        "format": "vc+sd-jwt",
+        "meta": {
+          "vct_values": ["https://example.com/AffiliationCredential"]
+        },
+        "claims": [
+          {
+            "path": ["organization"]
+          },
+          {
+            "path": ["portrait"]
+          }
+        ]
+      }
+    ]
   }
 }
 ```
 
 **レスポンスボディ**:
 
-OID4VP Request Object（詳細は[OID4VP仕様](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)を参照）
+OID4VP 1.0 Request Object with DCQL Query（詳細は[OID4VP 1.0仕様](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)を参照）
 
 **エラーレスポンス**:
 
@@ -122,66 +137,7 @@ OID4VP Request Object（詳細は[OID4VP仕様](https://openid.net/specs/openid-
 
 ---
 
-### 3. Presentation Definition取得
-
-#### GET /oid4vp/presentation-definition
-
-Presentation Definitionを取得します。
-
-**リクエスト**:
-
-```http
-GET /oid4vp/presentation-definition?id=pd_xyz789 HTTP/1.1
-```
-
-**クエリパラメータ**:
-
-| パラメータ | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `id` | string | ✓ | Presentation Definition ID |
-
-**レスポンス** (200 OK):
-
-```json
-{
-  "id": "pd_xyz789",
-  "input_descriptors": [
-    {
-      "id": "id_token_input",
-      "format": {
-        "jwt_vc_json": {
-          "proof_type": ["JsonWebSignature2020"]
-        }
-      },
-      "constraints": {
-        "fields": [
-          {
-            "path": ["$.type"],
-            "filter": {
-              "type": "string",
-              "pattern": "^VerifiableCredential$"
-            }
-          }
-        ]
-      }
-    }
-  ]
-}
-```
-
-**レスポンスボディ**:
-
-[DIF Presentation Exchange](https://identity.foundation/presentation-exchange/)仕様準拠のPresentation Definition
-
-**エラーレスポンス**:
-
-| ステータス | エラータイプ | 説明 |
-|-----------|-------------|------|
-| 404 | `NOT_FOUND` | Presentation Definitionが見つからない |
-
----
-
-### 4. Authorization Response受信
+### 3. Authorization Response受信
 
 #### POST /oid4vp/responses
 
@@ -193,15 +149,15 @@ Identity WalletからVerifiable Presentationを受信します（Response Endpoi
 POST /oid4vp/responses HTTP/1.1
 Content-Type: application/x-www-form-urlencoded
 
-vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=%7B%22id%22%3A%22sub123%22%7D&state=req_abc123
+vp_token=%7B%22affiliation_credential%22%3A%5B%22eyJ0eXAiOi...%22%5D%7D&id_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&state=req_abc123
 ```
 
 **リクエストボディ** (application/x-www-form-urlencoded):
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|---|------|------|
-| `vp_token` | string | ✓ | VP Token（JWT形式またはSD-JWT形式） |
-| `presentation_submission` | string | ✓ | Presentation Submission（JSON文字列） |
+| `vp_token` | string | ✓ | VP Token（DCQL形式: `{"credential_id": ["SD-JWT1", "SD-JWT2", ...]}`のJSON文字列） |
+| `id_token` | string | ✓ | ID Token（JWT形式） |
 | `state` | string | ✓ | リクエスト時のState値（`request_id`） |
 
 **レスポンス** (200 OK):
@@ -219,20 +175,21 @@ vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=%7B%22i
 | `redirect_uri` | string | クライアントへのリダイレクトURI（レスポンスコード含む） |
 
 **検証処理**:
-1. VP Tokenの署名検証（JWS/JWT）
+1. ID Tokenの署名検証（JWS/JWT）
 2. X.509証明書チェーン検証（x5cヘッダーがある場合）
-3. Presentation Submissionの検証
-4. Descriptor Mapとの整合性検証
-5. 所属証明クレデンシャル(SD-JWT)の検証
-6. **VP Token検証成功後、自動的にcommitted状態に遷移**
-7. レスポンスコードを生成してresponse_codesテーブルに保存
+3. VP Token（DCQL形式）のパース
+4. 所属証明クレデンシャル(SD-JWT)の抽出
+5. SD-JWTの署名検証およびKey Binding JWT検証
+6. Nonceの検証
+7. **VP Token検証成功後、自動的にcommitted状態に遷移**
+8. レスポンスコードを生成してresponse_codesテーブルに保存
 
 **エラーレスポンス**:
 
 | ステータス | エラータイプ | 説明 |
 |-----------|-------------|------|
 | 400 | `INVALID_PARAMETER` | リクエストボディが不正 |
-| 400 | `INVALID_SUBMISSION` | Presentation Submissionが不正 |
+| 400 | `INVALID_VP_TOKEN` | VP Tokenの形式が不正 |
 
 **環境変数**:
 
@@ -240,7 +197,7 @@ vp_token=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...&presentation_submission=%7B%22i
 
 ---
 
-### 5. Response Code交換
+### 4. Response Code交換
 
 #### POST /oid4vp/response-code/exchange
 
@@ -302,7 +259,7 @@ Cookie: koa.sess=...
 
 ---
 
-### 6. 状態取得
+### 5. 状態取得
 
 #### GET /oid4vp/states
 
@@ -442,18 +399,13 @@ sequenceDiagram
     Note over Client,DB: 1. Authorization Request生成
     Client->>Verifier: POST /oid4vp/auth-request
     Verifier->>DB: INSERT sessions (state=started)
-    Verifier->>DB: INSERT requests
-    Verifier->>DB: INSERT presentation_definitions
+    Verifier->>DB: INSERT requests (with DCQL query)
     Verifier-->>Client: OID4VP URI + Set-Cookie
 
     Note over Client,DB: 2. Wallet側のRequest Object取得
     Wallet->>Verifier: GET /oid4vp/request?id=xxx
     Verifier->>DB: SELECT requests WHERE id=xxx
-    Verifier-->>Wallet: Request Object
-
-    Wallet->>Verifier: GET /oid4vp/presentation-definition?id=yyy
-    Verifier->>DB: SELECT presentation_definitions WHERE id=yyy
-    Verifier-->>Wallet: Presentation Definition
+    Verifier-->>Wallet: Request Object (with dcql_query)
 
     Note over Client,DB: 3. VP Token提出
     Wallet->>Verifier: POST /oid4vp/responses (vp_token)
@@ -515,4 +467,4 @@ OID4VP Verifier APIは、OpenID for Verifiable Presentationsプロトコルに�
 - **セキュアな設計**: SD-JWT検証、X.509証明書チェーン検証、Cookie-basedセッション
 - **RESTful API**: 適切なHTTPメソッド、ステータスコード、エラーハンドリング
 
-本APIは、DIF Presentation Exchange、OpenID4VP、SD-JWT等の標準仕様に準拠しています。
+本APIは、OpenID4VP 1.0 (DCQL)、SD-JWT等の標準仕様に準拠しています。
