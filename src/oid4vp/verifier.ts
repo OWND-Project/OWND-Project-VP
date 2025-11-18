@@ -4,6 +4,8 @@ import { PrivateJwk } from "elliptic-jwk";
 import { Result } from "../tool-box/index.js";
 import {
   ConsumedError,
+  DcqlCredentialQuery,
+  DcqlQuery,
   DescriptorMap,
   ExpiredError,
   InputDescriptor,
@@ -423,12 +425,26 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     return state.authResponse;
   };
 
+  /**
+   * Generates a DCQL query from credential queries
+   * @param credentialQueries - An array of credential queries
+   * @returns A DCQL query object
+   */
+  const generateDcqlQuery = (
+    credentialQueries: DcqlCredentialQuery[],
+  ): DcqlQuery => {
+    return {
+      credentials: credentialQueries,
+    };
+  };
+
   return {
     startRequest,
     getRequest,
     consumeRequest,
     setAuthResponse,
     getAuthResponse,
+    generateDcqlQuery,
     generatePresentationDefinition,
     getPresentationDefinition,
     getPresentationDefinitionMap,

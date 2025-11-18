@@ -15,6 +15,27 @@ interface VCFormats {
   ldp_vc?: LinkedDataFormat;
 }
 
+// DCQL (Digital Credentials Query Language) types
+// https://openid.net/specs/openid-4-verifiable-presentations-1_0.html
+export interface DcqlClaimQuery {
+  path: string[];
+  values?: any[];
+}
+
+export interface DcqlCredentialQuery {
+  id: string;
+  format: string;
+  meta?: {
+    vct_values?: string[];
+    [key: string]: any;
+  };
+  claims?: DcqlClaimQuery[];
+}
+
+export interface DcqlQuery {
+  credentials: DcqlCredentialQuery[];
+}
+
 // https://identity.foundation/presentation-exchange/#input-descriptor-2
 export interface InputDescriptor {
   id: string;

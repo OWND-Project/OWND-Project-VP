@@ -2,7 +2,7 @@ import { importJWK, JWTHeaderParameters, SignJWT } from "jose";
 import { PrivateJwk } from "elliptic-jwk";
 
 import { generateRandomString } from "../utils/random-util.js";
-import { ClientMetadata } from "./types.js";
+import { ClientMetadata, DcqlQuery } from "./types.js";
 
 export interface GenerateRequestObjectOptions {
   iss?: string;
@@ -17,8 +17,9 @@ export interface GenerateRequestObjectOptions {
   clientIdScheme?: "x509_san_dns" | "x509_san_uri" | "redirect_uri";
   clientMetadata?: ClientMetadata;
   clientMetadataUri?: string;
-  presentationDefinition?: any;
-  presentationDefinitionUri?: string;
+  dcqlQuery?: DcqlQuery;
+  presentationDefinition?: any; // Deprecated: Use dcqlQuery instead
+  presentationDefinitionUri?: string; // Deprecated: Use dcqlQuery instead
   x509CertificateInfo?: X509CertificateInfo;
 }
 export interface RequestObject extends GenerateRequestObjectOptions {
@@ -104,6 +105,11 @@ export const generateRequestObjectPayload = (
     payload.clientMetadata = options.clientMetadata;
   }
 
+  if (options.dcqlQuery) {
+    payload.dcqlQuery = options.dcqlQuery;
+  }
+
+  // Deprecated: PEX support (will be removed in future versions)
   if (options.presentationDefinition) {
     payload.presentationDefinition = options.presentationDefinition;
   }
