@@ -98,8 +98,7 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
   "response_type": "vp_token id_token",
   "response_mode": "direct_post",
   "response_uri": "http://localhost:3000/oid4vp/responses",
-  "client_id": "http://localhost:3000",
-  "client_id_scheme": "x509_san_dns",
+  "client_id": "redirect_uri:http://localhost:3000",
   "nonce": "n-0S6_WzA2Mj",
   "state": "req_abc123",
   "dcql_query": {
@@ -124,6 +123,12 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
 }
 ```
 
+**注意**: OID4VP 1.0では、`client_id_scheme`パラメータは廃止され、`client_id`にプレフィックスを含める形式に変更されました。以下のプレフィックスがサポートされています：
+
+- `redirect_uri:` - 署名なしリクエスト
+- `x509_san_dns:` - X.509証明書のSAN DNS名による署名付きリクエスト
+- `x509_hash:` - X.509証明書のSHA-256ハッシュによる署名付きリクエスト
+
 **暗号化対応時のレスポンス例** (HAIP準拠):
 
 ```json
@@ -131,8 +136,7 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
   "response_type": "vp_token id_token",
   "response_mode": "direct_post.jwt",
   "response_uri": "http://localhost:3000/oid4vp/responses",
-  "client_id": "http://localhost:3000",
-  "client_id_scheme": "x509_san_dns",
+  "client_id": "redirect_uri:http://localhost:3000",
   "nonce": "n-0S6_WzA2Mj",
   "state": "req_abc123",
   "client_metadata": {

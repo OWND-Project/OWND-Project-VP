@@ -20,6 +20,7 @@ import {
   MissingSignerKey,
   UnsupportedClientIdSchemeError,
 } from "./auth-request.js";
+import { parseClientId } from "./client-id-utils.js";
 // Removed unused imports: extractNestedCredential, extractCredential, extractPresentation, getDescriptorMap
 // These were only used by deprecated PEX methods
 import { getCurrentUnixTimeInSeconds, isExpired } from "../utils/data-util.js";
@@ -145,18 +146,26 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     }
 
     // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-verifier-metadata-managemen
-    const clientIdScheme =
-      opts?.requestObject?.clientIdScheme || "redirect_uri";
-    if (clientIdScheme === "redirect_uri") {
+    // Parse Client Identifier Prefix (OID4VP 1.0)
+    const parsed = parseClientId(clientId);
+    if (!parsed) {
+      throw new UnsupportedClientIdSchemeError(
+        `Client ID must include a valid prefix (redirect_uri:, x509_san_dns:, or x509_hash:). Got: ${clientId}`,
+      );
+    }
+
+    if (parsed.prefix === "redirect_uri") {
+      // redirect_uri prefix: unsigned request
       const authRequest = generateRequestObjectPayload(clientId, __opts);
       return {
         clientId,
         params: camelToSnake(authRequest),
       };
     } else if (
-      clientIdScheme === "x509_san_dns" ||
-      clientIdScheme === "x509_san_uri"
+      parsed.prefix === "x509_san_dns" ||
+      parsed.prefix === "x509_hash"
     ) {
+      // x509_san_dns and x509_hash prefixes: signed request required
       if (opts && opts.issuerJwk) {
         const { issuerJwk } = opts;
         return {
@@ -168,12 +177,12 @@ export const initVerifier = (datastore: VerifierDatastore) => {
         };
       } else {
         throw new MissingSignerKey(
-          "The provided client_id_scheme needs to sign request object",
+          `The ${parsed.prefix} prefix requires a signed request object. Please provide issuerJwk.`,
         );
       }
     } else {
       throw new UnsupportedClientIdSchemeError(
-        "The provided client_id_scheme is not supported in the current implementation.",
+        `Unsupported Client Identifier Prefix: ${parsed.prefix}`,
       );
     }
   };

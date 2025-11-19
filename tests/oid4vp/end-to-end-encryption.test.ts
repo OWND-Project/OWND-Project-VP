@@ -113,11 +113,10 @@ describe("End-to-End Encryption Flow", () => {
           encryptionPublicJwk: vpRequest.encryptionPublicJwk,
           encryptionPrivateJwk: vpRequest.encryptionPrivateJwk,
         },
-        clientId,
+        `redirect_uri:${clientId}`,
         {
           requestObject: {
             responseUri,
-            clientIdScheme: "redirect_uri",
           },
         }
       );
@@ -212,11 +211,10 @@ describe("End-to-End Encryption Flow", () => {
           expiredIn: vpRequest.expiredIn,
           // No encryption keys
         },
-        clientId,
+        `redirect_uri:${clientId}`,
         {
           requestObject: {
             responseUri,
-            clientIdScheme: "redirect_uri",
           },
         }
       );

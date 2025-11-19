@@ -162,12 +162,13 @@ const generateAuthRequest = async (presenter) => {
   ]);
 
   // 3. Verifierリクエスト開始
-  const authRequest = await verifier.startRequest(request, clientId, {
+  // OID4VP 1.0: clientIdにプレフィックスを含める
+  const clientIdWithPrefix = `x509_san_dns:${clientId}`;
+  const authRequest = await verifier.startRequest(request, clientIdWithPrefix, {
     expiredIn: 600,
     issuerJwk: verifierJwk,
     x5c: verifierX5c,
     requestObject: {
-      clientIdScheme: "x509_san_dns",
       responseUri: responseUri,
       dcqlQuery,  // DCQL Query（Presentation Definitionの代わり）
       clientMetadata: generateClientMetadata(),
@@ -249,13 +250,14 @@ const getRequestObject = async (requestId) => {
   if (request.consumedAt > 0) return { ok: false, error: { type: "CONSUMED" } };
 
   // 2. DCQL Queryを含むRequest Object (JWT)生成
+  // OID4VP 1.0: clientIdにプレフィックスを含める
+  const clientIdWithPrefix = `x509_san_dns:${clientId}`;
   const requestObjectJwt = await generateRequestObjectJwt(
-    clientId,
+    clientIdWithPrefix,
     {
       nonce: request.nonce,
       state: request.id,
       responseUri: responseUri,
-      clientIdScheme: "x509_san_dns",
       dcqlQuery: request.dcql_query,  // DCQL Query（DB保存済み）
       clientMetadata: generateClientMetadata(),
     },

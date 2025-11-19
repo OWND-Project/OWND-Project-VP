@@ -60,17 +60,23 @@ OID4VP Verifierでは、X.509証明書を以下の目的で使用：
 2. **VP Token署名生成**: Request ObjectのJWT署名
 3. **VC/VP署名検証**: ウォレットから受信したクレデンシャルの署名検証
 
-### 証明書スキーム
+### Client Identifier Prefix (OID4VP 1.0)
 
-**client_id_scheme**: `x509_san_dns`
+**Client ID形式**: `x509_san_dns:example.com`
 
+- OID4VP 1.0では、`client_id_scheme`パラメータは廃止され、Client IDにプレフィックスを含める形式に変更
 - Verifierの証明書にSAN（Subject Alternative Name）でDNS名を含める
-- ウォレットはSANのDNS名と`client_id`を照合
+- ウォレットはSANのDNS名とClient IDのプレフィックス後の値を照合
+
+**サポートされるプレフィックス**:
+- `redirect_uri:` - 署名なしリクエスト
+- `x509_san_dns:` - X.509証明書のSAN DNS名による署名付きリクエスト
+- `x509_hash:` - X.509証明書のSHA-256ハッシュによる署名付きリクエスト
 
 **設定例**:
 ```bash
-OID4VP_CLIENT_ID_SCHEME=x509_san_dns
-OID4VP_CLIENT_ID=https://your-verifier.com
+# OID4VP 1.0形式（プレフィックスを含む）
+OID4VP_CLIENT_ID=x509_san_dns:your-verifier.com
 OID4VP_VERIFIER_X5C='-----BEGIN CERTIFICATE-----
 MIICx...
 -----END CERTIFICATE-----'
@@ -1163,7 +1169,7 @@ WuGzxmcreYjpHGJoa17EBg  ← 認証タグ (Base64URL)
 
 3. **認証 (Authentication)**:
    - Verifierの公開鍵はRequest Object（X.509証明書で署名）に含まれる
-   - Walletはclient_id_scheme (x509_san_dns) により、Verifierの身元を検証
+   - WalletはClient IDのプレフィックス（例: x509_san_dns:）により、Verifierの身元を検証
 
 4. **Forward Secrecy**:
    - エフェメラル鍵使用により、過去のセッションの機密性を保証

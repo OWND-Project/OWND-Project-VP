@@ -51,10 +51,9 @@ describe("Verifier", () => {
           expiredIn,
         };
         try {
-          await verifier.startRequest(request, clientId, {
-            requestObject: {
-              clientIdScheme: "redirect_uri",
-            },
+          const clientIdWithPrefix = `redirect_uri:${clientId}`;
+          await verifier.startRequest(request, clientIdWithPrefix, {
+            requestObject: {},
             expiredIn,
           });
           assert.fail("startRequest should be return missing uri error");
@@ -73,12 +72,11 @@ describe("Verifier", () => {
           issuedAt,
           expiredIn,
         };
-        const clientIdScheme = "redirect_uri";
         const responseMode = "direct_post";
         const responseUri = faker.internet.url();
-        const ret = await verifier.startRequest(request, clientId, {
+        const clientIdWithPrefix = `redirect_uri:${clientId}`;
+        const ret = await verifier.startRequest(request, clientIdWithPrefix, {
           requestObject: {
-            clientIdScheme,
             responseMode,
             responseUri,
           },
@@ -89,8 +87,7 @@ describe("Verifier", () => {
           const { params } = ret;
           assert.equal(params.state, request.id);
           assert.isString(params.nonce);
-          assert.equal(params.client_id, clientId);
-          assert.equal(params.client_id_scheme, clientIdScheme);
+          assert.equal(params.client_id, clientIdWithPrefix);
           assert.equal(params.response_mode, responseMode);
           assert.equal(params.response_uri, responseUri);
           // assert.equal(requestAtVerifier.transactionId, request.transactionId);
@@ -120,17 +117,21 @@ describe("Verifier", () => {
         };
         const responseMode = "direct_post";
         const responseUri = faker.internet.url();
-        const authRequest = await verifier.startRequest(request, clientId, {
-          requestObject: {
-            clientIdScheme: "x509_san_dns",
-            responseType,
-            responseMode,
-            responseUri,
+        const clientIdWithPrefix = `x509_san_dns:${clientId}`;
+        const authRequest = await verifier.startRequest(
+          request,
+          clientIdWithPrefix,
+          {
+            requestObject: {
+              responseType,
+              responseMode,
+              responseUri,
+            },
+            issuerJwk: keypair,
+            x5c,
+            expiredIn,
           },
-          issuerJwk: keypair,
-          x5c,
-          expiredIn,
-        });
+        );
         console.log(authRequest);
         if (authRequest.request) {
           const { request } = authRequest;
@@ -140,7 +141,13 @@ describe("Verifier", () => {
 
             const verifyResult = await jose.jwtVerify(request, ecPublicKey);
             console.debug(verifyResult);
-            assert.equal(verifyResult.payload.client_id_scheme, "x509_san_dns");
+            // OID4VP 1.0: client_id contains the prefix, no client_id_scheme parameter
+            assert.equal(verifyResult.payload.client_id, clientIdWithPrefix);
+            assert.isTrue(
+              (verifyResult.payload.client_id as string).startsWith(
+                "x509_san_dns:",
+              ),
+            );
           } catch (err) {
             assert.fail("failed to generate request object", err);
           }
@@ -298,10 +305,10 @@ describe("Verifier", () => {
         encryptionPrivateJwk: JSON.stringify({ ...mockPublicJwk, d: "test-private" }),
       };
 
-      const result = await verifier.startRequest(request, clientId, {
+      const clientIdWithPrefix = `redirect_uri:${clientId}`;
+      const result = await verifier.startRequest(request, clientIdWithPrefix, {
         requestObject: {
           responseUri,
-          clientIdScheme: "redirect_uri",
         },
       });
 
@@ -344,10 +351,10 @@ describe("Verifier", () => {
         // No encryption keys
       };
 
-      const result = await verifier.startRequest(request, clientId, {
+      const clientIdWithPrefix = `redirect_uri:${clientId}`;
+      const result = await verifier.startRequest(request, clientIdWithPrefix, {
         requestObject: {
           responseUri,
-          clientIdScheme: "redirect_uri",
         },
       });
 
