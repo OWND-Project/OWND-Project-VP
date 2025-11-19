@@ -7,7 +7,7 @@ import { issueJwt } from "../../src/helpers/jwt-helper.js";
 
 describe("credential2-processor", () => {
   describe("#extractCredentialFromVpToken", () => {
-    const credentialQueryId = "affiliation_credential";
+    const credentialQueryId = "learning_credential";
     let nonce: string;
     let holderKeyPair: any;
 
@@ -20,10 +20,15 @@ describe("credential2-processor", () => {
       it("should extract SD-JWT credential from DCQL VP Token", async () => {
         // Prepare: Create SD-JWT with key binding (following post-comment.ts pattern)
         const claims = {
-          vct: "https://example.com/AffiliationCredential",
-          organization: "Example Corp",
+          vct: "urn:eu.europa.ec.eudi:learning:credential:1",
+          issuing_authority: "Technical University of Munich",
+          issuing_country: "DE",
+          date_of_issuance: "2025-09-15",
+          family_name: "Smith",
+          given_name: "John",
+          achievement_title: "Foundations of Applied AI in Business",
         };
-        const disclosures = ["organization"];
+        const disclosures = ["family_name", "given_name"];
 
         const sdJwt = await createSdJwt(claims, disclosures, {
           holderPublicJwk: holderKeyPair,
@@ -49,48 +54,8 @@ describe("credential2-processor", () => {
         // Assert
         assert.isTrue(result.ok);
         if (result.ok) {
-          assert.isDefined(result.payload.affiliation);
-          assert.equal(result.payload.affiliation, sdJwt + kbJwt);
-          assert.isUndefined(result.payload.icon); // No portrait disclosure
-        }
-      });
-
-      it("should extract icon from portrait disclosure", async () => {
-        // Prepare: SD-JWT with portrait disclosure
-        const portraitData = "data:image/png;base64,iVBORw0KGgoAAAANS...";
-        const claims = {
-          vct: "https://example.com/AffiliationCredential",
-          organization: "Example Corp",
-          portrait: portraitData,
-        };
-        const disclosures = ["organization", "portrait"];
-
-        const sdJwt = await createSdJwt(claims, disclosures, {
-          holderPublicJwk: holderKeyPair,
-        });
-
-        const kbJwt = await issueJwt(
-          { alg: "ES256" },
-          { nonce },
-          holderKeyPair,
-        );
-
-        const vpToken = {
-          [credentialQueryId]: [sdJwt + kbJwt],
-        };
-
-        // Execute
-        const result = await extractCredentialFromVpToken(
-          vpToken,
-          credentialQueryId,
-          nonce,
-        );
-
-        // Assert
-        assert.isTrue(result.ok);
-        if (result.ok) {
-          assert.isDefined(result.payload.affiliation);
-          assert.equal(result.payload.icon, portraitData);
+          assert.isDefined(result.payload.learningCredential);
+          assert.equal(result.payload.learningCredential, sdJwt + kbJwt);
         }
       });
 
@@ -110,8 +75,7 @@ describe("credential2-processor", () => {
         // Assert
         assert.isTrue(result.ok);
         if (result.ok) {
-          assert.isUndefined(result.payload.affiliation);
-          assert.isUndefined(result.payload.icon);
+          assert.isUndefined(result.payload.learningCredential);
         }
       });
 
@@ -131,8 +95,7 @@ describe("credential2-processor", () => {
         // Assert
         assert.isTrue(result.ok);
         if (result.ok) {
-          assert.isUndefined(result.payload.affiliation);
-          assert.isUndefined(result.payload.icon);
+          assert.isUndefined(result.payload.learningCredential);
         }
       });
     });
@@ -141,9 +104,15 @@ describe("credential2-processor", () => {
       it("should fail when key binding JWT is missing", async () => {
         // Prepare: SD-JWT without key binding JWT
         const claims = {
-          vct: "https://example.com/AffiliationCredential",
+          vct: "urn:eu.europa.ec.eudi:learning:credential:1",
+          issuing_authority: "Test University",
+          issuing_country: "DE",
+          date_of_issuance: "2025-09-15",
+          family_name: "Doe",
+          given_name: "Jane",
+          achievement_title: "Test Course",
         };
-        const sdJwt = await createSdJwt(claims, [], {
+        const sdJwt = await createSdJwt(claims, ["family_name", "given_name"], {
           holderPublicJwk: holderKeyPair,
         });
 
@@ -168,9 +137,15 @@ describe("credential2-processor", () => {
       it("should fail when nonce mismatch", async () => {
         // Prepare: SD-JWT with wrong nonce in KB-JWT
         const claims = {
-          vct: "https://example.com/AffiliationCredential",
+          vct: "urn:eu.europa.ec.eudi:learning:credential:1",
+          issuing_authority: "Test University",
+          issuing_country: "DE",
+          date_of_issuance: "2025-09-15",
+          family_name: "Doe",
+          given_name: "Jane",
+          achievement_title: "Test Course",
         };
-        const sdJwt = await createSdJwt(claims, [], {
+        const sdJwt = await createSdJwt(claims, ["family_name", "given_name"], {
           holderPublicJwk: holderKeyPair,
         });
 
@@ -202,9 +177,15 @@ describe("credential2-processor", () => {
       it("should fail when SD-JWT signature verification fails", async () => {
         // Prepare: Invalid SD-JWT (tampered)
         const claims = {
-          vct: "https://example.com/AffiliationCredential",
+          vct: "urn:eu.europa.ec.eudi:learning:credential:1",
+          issuing_authority: "Test University",
+          issuing_country: "DE",
+          date_of_issuance: "2025-09-15",
+          family_name: "Doe",
+          given_name: "Jane",
+          achievement_title: "Test Course",
         };
-        const sdJwt = await createSdJwt(claims, [], {
+        const sdJwt = await createSdJwt(claims, ["family_name", "given_name"], {
           holderPublicJwk: holderKeyPair,
         });
 
@@ -294,7 +275,7 @@ describe("credential2-processor", () => {
         // Assert
         assert.isTrue(result.ok);
         if (result.ok) {
-          assert.equal(result.payload.affiliation, sdJwt1 + kbJwt1);
+          assert.equal(result.payload.learningCredential, sdJwt1 + kbJwt1);
         }
       });
 
@@ -312,8 +293,7 @@ describe("credential2-processor", () => {
         // Assert
         assert.isTrue(result.ok);
         if (result.ok) {
-          assert.isUndefined(result.payload.affiliation);
-          assert.isUndefined(result.payload.icon);
+          assert.isUndefined(result.payload.learningCredential);
         }
       });
     });

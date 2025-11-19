@@ -14,8 +14,7 @@ export type ExchangeResponseCodePresenter<T> = (
   claimer: {
     sub: string;
     id_token: string;
-    organization?: string;
-    icon?: string;
+    learningCredential?: string;
   },
 ) => T;
 export type PostStatePresenter<T> = (state: PostState | null) => T;
@@ -37,7 +36,7 @@ export interface RequestId extends EntityWithLifeCycle {
 export interface WaitCommitData extends EntityWithLifeCycle {
   data: {
     idToken: string;
-    affiliationJwt?: string;
+    learningCredentialJwt?: string;
   };
 }
 

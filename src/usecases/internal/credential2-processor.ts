@@ -14,20 +14,20 @@ const logger = getLogger();
  * @param vpToken - VP Token in DCQL format (JSON object with credential query ID as key)
  * @param credentialQueryId - The credential query ID to extract
  * @param nonce - Expected nonce value
- * @returns Affiliation JWT and icon if successful
+ * @returns Learning Credential JWT if successful
  */
 export const extractCredentialFromVpToken = async (
   vpToken: Record<string, string[]>,
   credentialQueryId: string,
   nonce: string,
-): Promise<Result<{ affiliation?: string; icon?: string }, NotSuccessResult>> => {
+): Promise<Result<{ learningCredential?: string }, NotSuccessResult>> => {
   try {
     // DCQL format: JSON object with credential query ID as key
     const presentations = vpToken[credentialQueryId];
 
     if (!presentations || presentations.length === 0) {
       logger.info(`No credential found for query ID: ${credentialQueryId}`);
-      return { ok: true, payload: { affiliation: undefined, icon: undefined } };
+      return { ok: true, payload: { learningCredential: undefined } };
     }
 
     const token = presentations[0];
@@ -63,21 +63,13 @@ export const extractCredentialFromVpToken = async (
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
     }
 
-    // Extract icon from disclosures
-    let icon: string | undefined = undefined;
-    if (decoded.disclosures) {
-      decoded.disclosures.forEach((disclosure: any) => {
-        if (disclosure.key === "portrait") {
-          icon = disclosure.value;
-        }
-      });
-    }
+    // Learning Credential doesn't include portrait field
+    // All credential data is contained in the SD-JWT token itself
 
     return {
       ok: true,
       payload: {
-        affiliation: token,
-        icon
+        learningCredential: token
       }
     };
   } catch (err) {

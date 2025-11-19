@@ -198,7 +198,7 @@ export const initSessionRepository = (db: Database) => {
   const putWaitCommitData = async (
     requestId: string,
     idToken: string,
-    affiliationJwt?: string,
+    learningCredentialJwt?: string,
     opts?: EntityWithLifeCycleOption
   ) => {
     const issuedAt = opts?.issuedAt ?? getCurrentUnixTimeInSeconds();
@@ -206,7 +206,7 @@ export const initSessionRepository = (db: Database) => {
 
     const credentialData = {
       idToken,
-      affiliationJwt,
+      learningCredentialJwt,
     };
 
     await db.run(
@@ -224,7 +224,7 @@ export const initSessionRepository = (db: Database) => {
       id: requestId,
       data: {
         idToken,
-        affiliationJwt,
+        learningCredentialJwt,
       },
       issuedAt,
       expiredIn,

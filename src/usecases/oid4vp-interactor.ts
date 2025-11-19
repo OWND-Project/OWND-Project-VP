@@ -98,19 +98,24 @@ export const initOID4VPInteractor = (
       expiredIn: Env().expiredIn.requestAtResponseEndpoint,
     });
 
-    // Generate DCQL query for affiliation credential
+    // Generate DCQL query for learning credential
     const dcqlQuery = verifier.generateDcqlQuery([
       {
-        id: "affiliation_credential",
+        id: "learning_credential",
         format: "vc+sd-jwt",
         meta: {
-          vct_values: ["OrganizationalAffiliationCertificate"],
+          vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"],
         },
         claims: [
-          { path: ["organization_name"] },
+          { path: ["issuing_authority"] },
+          { path: ["issuing_country"] },
+          { path: ["date_of_issuance"] },
           { path: ["family_name"] },
           { path: ["given_name"] },
-          { path: ["portrait"] },
+          { path: ["achievement_title"] },
+          { path: ["achievement_description"] },
+          { path: ["learning_outcomes"] },
+          { path: ["assessment_grade"] },
         ],
       },
     ]);
@@ -289,8 +294,8 @@ export const initOID4VPInteractor = (
     const { idToken } = payload;
 
     logger.info("extractCredentialFromVpToken start");
-    // Process affiliation credential using DCQL flow (direct VP Token extraction)
-    const credentialQueryId = "affiliation_credential";
+    // Process learning credential using DCQL flow (direct VP Token extraction)
+    const credentialQueryId = "learning_credential";
     const cred = await extractCredentialFromVpToken(
       payload.vpToken,
       credentialQueryId,
@@ -315,13 +320,13 @@ export const initOID4VPInteractor = (
     }
 
     // Extract credential data
-    const { affiliation, icon } = cred.payload;
+    const { learningCredential } = cred.payload;
 
     // Save session data
     await sessionRepository.putWaitCommitData(
       requestId,
       idToken!,
-      affiliation,
+      learningCredential,
       { expiredIn: Env().expiredIn.postSession },
     );
 
@@ -334,8 +339,7 @@ export const initOID4VPInteractor = (
       payload: presenter(requestId, {
         sub: "", // ID token validation removed
         id_token: idToken!,
-        icon,
-        organization: affiliation,
+        learningCredential: learningCredential,
       }),
     };
   };
