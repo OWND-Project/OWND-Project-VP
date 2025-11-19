@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS requests (
   client_id TEXT NOT NULL,
   response_uri TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
+  expires_at INTEGER NOT NULL,
+  encryption_private_jwk TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_expires_at ON requests(expires_at);

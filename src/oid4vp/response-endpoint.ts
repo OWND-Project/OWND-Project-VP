@@ -1,8 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
+import { decodeProtectedHeader } from "jose";
 import { Result } from "../tool-box/index.js";
 import { ExpiredError, NotFoundError, UnexpectedError } from "./types.js";
 import getLogger from "../services/logging-service.js";
 import { isExpired } from "../utils/data-util.js";
+import { decryptJWE } from "../helpers/jwt-helper.js";
 
 const logger = getLogger();
 
@@ -13,6 +15,8 @@ export interface VpRequest {
   transactionId?: string;
   issuedAt: number;
   expiredIn: number;
+  encryptionPublicJwk?: string; // エフェメラル公開鍵（JWK形式、JSON文字列）
+  encryptionPrivateJwk?: string; // エフェメラル秘密鍵（JWK形式、JSON文字列）
 }
 
 export interface AuthResponsePayload {
@@ -80,6 +84,7 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
     useTransactionId?: boolean;
     expiredIn?: number;
     generateId?: () => string;
+    enableEncryption?: boolean; // VP Token暗号化を有効化
   }): Promise<VpRequest> => {
     const __request: VpRequest = {
       id: config.generateId ? config.generateId() : uuidv4(),
@@ -93,6 +98,17 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
         ? config.generateId()
         : uuidv4();
     }
+
+    // エフェメラル鍵ペア生成（暗号化有効時）
+    if (config.enableEncryption) {
+      const { generateEphemeralKeyPair } = await import(
+        "../helpers/jwt-helper.js"
+      );
+      const { publicJwk, privateJwk } = await generateEphemeralKeyPair();
+      __request.encryptionPublicJwk = JSON.stringify(publicJwk);
+      __request.encryptionPrivateJwk = JSON.stringify(privateJwk);
+    }
+
     await datastore.saveRequest(__request);
 
     return __request;
@@ -124,7 +140,53 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
       ReceiveAuthResponseError
     >
   > => {
-    const { state, vp_token, presentation_submission, id_token } = payload;
+    // JWE暗号化レスポンスの検出と復号化
+    let decryptedPayload = payload;
+    if (payload.response) {
+      // JWE形式（direct_post.jwt）
+      const state = payload.state;
+      if (!state) {
+        return {
+          ok: false,
+          error: { type: "INVALID_AUTH_RESPONSE_PAYLOAD" },
+        };
+      }
+
+      // stateからrequestを取得
+      const __request = await datastore.getRequest(state);
+      if (!__request) {
+        return { ok: false, error: { type: "REQUEST_ID_IS_NOT_FOUND" } };
+      }
+
+      if (!__request.encryptionPrivateJwk) {
+        logger.error("Encrypted response received but no encryption key found");
+        return {
+          ok: false,
+          error: { type: "INVALID_AUTH_RESPONSE_PAYLOAD" },
+        };
+      }
+
+      // JWE復号化
+      try {
+        const privateJwk = JSON.parse(__request.encryptionPrivateJwk);
+        const decrypted = await decryptJWE(payload.response, privateJwk);
+        // 復号化されたペイロードにstateを追加
+        decryptedPayload = {
+          ...decrypted,
+          state,
+        };
+        logger.info("JWE decryption successful");
+      } catch (error) {
+        logger.error("JWE decryption failed", error);
+        return {
+          ok: false,
+          error: { type: "INVALID_AUTH_RESPONSE_PAYLOAD" },
+        };
+      }
+    }
+
+    const { state, vp_token, presentation_submission, id_token } =
+      decryptedPayload;
 
     const error: InvalidAuthResponsePayloadError = {
       type: "INVALID_AUTH_RESPONSE_PAYLOAD",

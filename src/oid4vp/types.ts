@@ -177,8 +177,9 @@ export interface ClientMetadata {
   policyUri?: string;
   tosUri?: string;
   clientPurpose?: string;
-  jwks?: string; // todo change to set
+  jwks?: string | { keys: any[] }; // JWK Set (string or object)
   jwksUri?: string;
+  encryptedResponseEncValuesSupported?: string[]; // JWE content encryption algorithms
   vpFormatsSupported?: Format;
   redirectUris?: string[];
 }

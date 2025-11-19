@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import {
+  compactDecrypt,
   decodeProtectedHeader,
+  exportJWK,
+  generateKeyPair,
   importJWK,
   importX509,
   JWK,
@@ -147,4 +150,85 @@ export const decodeSdJwt = (sdjwt: string) => {
     keyBindingJWT,
   } = decodeSDJWT(sdjwt);
   return { issueJwt: jwt, disclosures };
+};
+
+/**
+ * エフェメラル鍵ペア生成（ECDH-ES + P-256）
+ *
+ * VP Token暗号化のためのエフェメラル鍵ペアを生成します。
+ * 生成された鍵ペアは1回限りの使用を想定しています。
+ *
+ * @returns 公開鍵JWK、秘密鍵JWK、およびkid
+ */
+export const generateEphemeralKeyPair = async (): Promise<{
+  publicJwk: JWK;
+  privateJwk: JWK;
+  kid: string;
+}> => {
+  // ECDH-ES用の鍵ペア生成（P-256曲線）
+  const { publicKey, privateKey } = await generateKeyPair("ECDH-ES", {
+    extractable: true,
+    crv: "P-256",
+  });
+
+  // JWK形式にエクスポート
+  const publicJwk = await exportJWK(publicKey);
+  const privateJwk = await exportJWK(privateKey);
+
+  // Key ID生成
+  const kid = crypto.randomUUID();
+
+  // 公開鍵にメタデータ追加
+  publicJwk.kid = kid;
+  publicJwk.use = "enc";
+  publicJwk.alg = "ECDH-ES";
+
+  // 秘密鍵にもkid追加
+  privateJwk.kid = kid;
+
+  return { publicJwk, privateJwk, kid };
+};
+
+/**
+ * JWE復号化（ECDH-ES + A128GCM）
+ *
+ * @param jwe - JWE Compact Serialization形式の文字列
+ * @param privateJwk - Verifierのエフェメラル秘密鍵（JWK形式）
+ * @returns 復号化されたペイロード
+ *
+ * 処理内容:
+ * 1. JWE Protected Headerからアルゴリズム情報を検証
+ * 2. compactDecrypt内で自動的にECDH鍵交換が実行される
+ *    - JWE Headerのepk（Walletのエフェメラル公開鍵）を使用
+ *    - 提供された秘密鍵とepkでECDH-ESによる共有秘密を導出
+ * 3. A128GCMで復号化（アルゴリズムはJWE Headerから自動読み取り）
+ * 4. 認証タグの検証（GCM）
+ */
+export const decryptJWE = async (
+  jwe: string,
+  privateJwk: JWK,
+): Promise<any> => {
+  // 1. Protected Header検証（復号化前）
+  const protectedHeader = decodeProtectedHeader(jwe);
+
+  // 2. アルゴリズム検証（アルゴリズム代替攻撃対策）
+  if (protectedHeader.alg !== "ECDH-ES") {
+    throw new Error(`Unsupported JWE algorithm: ${protectedHeader.alg}`);
+  }
+  if (protectedHeader.enc !== "A128GCM") {
+    throw new Error(`Unsupported JWE encryption: ${protectedHeader.enc}`);
+  }
+
+  // 3. 秘密鍵インポート
+  const privateKey = await importJWK(privateJwk, "ECDH-ES");
+
+  // 4. JWE復号化
+  //    - ECDH鍵交換（epkと秘密鍵から共有秘密を導出）
+  //    - A128GCMで復号化
+  //    - 認証タグ検証
+  //    これらは全てcompactDecrypt内で自動実行される
+  const { plaintext } = await compactDecrypt(jwe, privateKey);
+
+  // 5. ペイロードをJSONとしてパース
+  return JSON.parse(new TextDecoder().decode(plaintext));
 };

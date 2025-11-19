@@ -11,7 +11,7 @@ export interface GenerateRequestObjectOptions {
   state?: string;
   scope?: any;
   responseType?: string;
-  responseMode?: "direct_post" | "query" | "fragment";
+  responseMode?: "direct_post" | "direct_post.jwt" | "query" | "fragment";
   redirectUri?: string;
   responseUri?: string;
   clientIdScheme?: "x509_san_dns" | "x509_san_uri" | "redirect_uri";

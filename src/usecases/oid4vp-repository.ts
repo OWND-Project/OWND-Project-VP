@@ -37,8 +37,8 @@ export const initResponseEndpointDatastore = (
     saveRequest: async (request: VpRequest) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+         (id, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, encryption_private_jwk)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.responseType,
@@ -46,6 +46,7 @@ export const initResponseEndpointDatastore = (
           request.transactionId || null,
           request.issuedAt,
           request.issuedAt + request.expiredIn,
+          request.encryptionPrivateJwk || null,
         ]
       );
     },
@@ -63,6 +64,8 @@ export const initResponseEndpointDatastore = (
         transactionId: row.transaction_id,
         issuedAt: row.created_at,
         expiredIn: row.expires_at - row.created_at,
+        encryptionPublicJwk: row.encryption_public_jwk,
+        encryptionPrivateJwk: row.encryption_private_jwk,
       } as VpRequest;
     },
     saveResponse: async (response: AuthResponse) => {
@@ -114,8 +117,8 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
     saveRequest: async (request: VpRequestAtVerifier) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, nonce, session, transaction_id, created_at, expires_at, consumed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, nonce, session, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.nonce,
@@ -124,6 +127,7 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
           request.issuedAt,
           request.issuedAt + request.expiredIn,
           request.consumedAt,
+          request.encryptionPrivateJwk || null,
         ]
       );
     },
@@ -142,6 +146,7 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
         issuedAt: row.created_at,
         expiredIn: row.expires_at - row.created_at,
         consumedAt: row.consumed_at,
+        encryptionPrivateJwk: row.encryption_private_jwk,
       } as VpRequestAtVerifier;
     },
     // Removed: savePresentationDefinition and getPresentationDefinition (PEX deprecated)

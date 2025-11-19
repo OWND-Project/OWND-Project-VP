@@ -32,6 +32,8 @@ export interface VpRequestAtVerifier {
   issuedAt: number;
   expiredIn: number;
   consumedAt: number;
+  encryptionPublicJwk?: string; // エフェメラル公開鍵（JWK形式、JSON文字列） - Response Endpointから受け取る
+  encryptionPrivateJwk?: string; // エフェメラル秘密鍵（JWK形式、JSON文字列） - Response Endpointで生成
 }
 
 export interface VerifierDatastore {
@@ -114,6 +116,13 @@ export const initVerifier = (datastore: VerifierDatastore) => {
     if (request.transactionId) {
       __request.transactionId = request.transactionId;
     }
+
+    // エフェメラル鍵ペアはResponse Endpoint側で生成される
+    // request.encryptionPublicJwkがあればclient_metadataに追加
+    if (request.encryptionPublicJwk) {
+      __request.encryptionPrivateJwk = request.encryptionPrivateJwk;
+    }
+
     await datastore.saveRequest(__request);
 
     const __opts: GenerateRequestObjectOptions = {
@@ -121,6 +130,19 @@ export const initVerifier = (datastore: VerifierDatastore) => {
       state: opts?.requestObject?.state || __request.id,
       nonce: opts?.requestObject?.nonce || __request.nonce,
     };
+
+    // client_metadataに暗号化情報を追加
+    if (request.encryptionPublicJwk) {
+      const encryptionPublicJwk = JSON.parse(request.encryptionPublicJwk);
+      __opts.responseMode = "direct_post.jwt";
+      __opts.clientMetadata = {
+        ...(__opts.clientMetadata || {}),
+        jwks: {
+          keys: [encryptionPublicJwk],
+        },
+        encryptedResponseEncValuesSupported: ["A128GCM"],
+      };
+    }
 
     // https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-verifier-metadata-managemen
     const clientIdScheme =
