@@ -4,6 +4,10 @@ import {
   generateCsr,
   trimmer,
 } from "../../src/tool-box/x509/issue.js";
+import {
+  CERT_PEM_PREAMBLE,
+  CERT_PEM_POSTAMBLE,
+} from "../../src/tool-box/x509/constant.js";
 import { getKeyAlgorithm, ellipticJwkToPem } from "../../src/tool-box/util.js";
 import * as datetimeUtils from "../../src/tool-box/datetime.js";
 import { issueJwt } from "../../src/helpers/jwt-helper.js";
@@ -34,6 +38,17 @@ export const generateCert = async (subject: string, privateJwk: PrivateJwk) => {
     ),
   );
   return cert;
+};
+
+/**
+ * Generate certificate in PEM format (with headers)
+ */
+export const generateCertPem = async (
+  subject: string,
+  privateJwk: PrivateJwk,
+): Promise<string> => {
+  const cert = await generateCert(subject, privateJwk);
+  return `${CERT_PEM_PREAMBLE}\n${cert}\n${CERT_PEM_POSTAMBLE}`;
 };
 
 export const issueJwtUsingX5C = async (

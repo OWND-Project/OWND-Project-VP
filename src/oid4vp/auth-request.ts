@@ -3,6 +3,12 @@ import { PrivateJwk } from "elliptic-jwk";
 
 import { generateRandomString } from "../utils/random-util.js";
 import { ClientMetadata, DcqlQuery } from "./types.js";
+import {
+  parseClientId,
+  formatClientId,
+  calculateX509Hash,
+  ClientIdPrefix,
+} from "./client-id-utils.js";
 
 export interface GenerateRequestObjectOptions {
   iss?: string;
@@ -14,6 +20,12 @@ export interface GenerateRequestObjectOptions {
   responseMode?: "direct_post" | "direct_post.jwt" | "query" | "fragment";
   redirectUri?: string;
   responseUri?: string;
+  /**
+   * @deprecated Use Client Identifier Prefix in clientId instead (OID4VP 1.0)
+   * Client Identifier should include prefix: "redirect_uri:", "x509_san_dns:", or "x509_hash:"
+   *
+   * For backward compatibility, if provided, this will be automatically converted to the new prefix format.
+   */
   clientIdScheme?: "x509_san_dns" | "x509_san_uri" | "redirect_uri";
   clientMetadata?: ClientMetadata;
   clientMetadataUri?: string;
@@ -61,15 +73,6 @@ export const generateRequestObjectPayload = (
     https://www.rfc-editor.org/rfc/rfc9101.html#name-authorization-request
     https://openid.net/specs/openid-connect-core-1_0.html#RequestObject
   */
-  const allowedSchemes = ["x509_san_dns", "x509_san_uri", "redirect_uri"];
-  if (
-    !options.clientIdScheme ||
-    !allowedSchemes.includes(options.clientIdScheme)
-  ) {
-    throw new UnsupportedClientIdSchemeError(
-      "The provided client_id_scheme is not supported in the current implementation.",
-    );
-  }
 
   if (!options.redirectUri && !options.responseUri) {
     throw new MissingUriError(
@@ -82,13 +85,50 @@ export const generateRequestObjectPayload = (
     );
   }
 
+  let finalClientId = clientId;
+
+  // Backward compatibility: Convert old clientIdScheme to new prefix format
+  if (options.clientIdScheme) {
+    const parsed = parseClientId(clientId);
+
+    // Only convert if clientId doesn't already have a prefix
+    if (!parsed) {
+      // Map x509_san_uri to x509_san_dns (they are functionally equivalent)
+      const scheme =
+        options.clientIdScheme === "x509_san_uri"
+          ? "x509_san_dns"
+          : options.clientIdScheme;
+
+      // For redirect_uri and x509_san_dns, use clientId as the value
+      finalClientId = formatClientId(scheme as ClientIdPrefix, clientId);
+      console.warn(
+        `[Deprecated] clientIdScheme is deprecated. Use Client Identifier Prefix instead. Converted to: ${finalClientId}`,
+      );
+    }
+  }
+
+  // Validate that clientId has a valid prefix
+  const parsed = parseClientId(finalClientId);
+  if (!parsed) {
+    throw new UnsupportedClientIdSchemeError(
+      `Client ID must include a valid prefix (redirect_uri:, x509_san_dns:, or x509_hash:). Got: ${finalClientId}`,
+    );
+  }
+
+  // Warn if redirect_uri prefix is used with signed requests
+  if (parsed.prefix === "redirect_uri" && options.x509CertificateInfo) {
+    console.warn(
+      "[Warning] redirect_uri prefix cannot be used with signed requests. Signature will be ignored by Wallet.",
+    );
+  }
+
   const payload: RequestObject = {
-    clientId: clientId,
+    clientId: finalClientId, // Use prefix-included client ID
     nonce: options.nonce || generateRandomString(),
     state: options.state || generateRandomString(),
     responseType: options.responseType || "vp_token",
     responseMode: options.responseMode || "fragment",
-    clientIdScheme: options.clientIdScheme || "redirect_uri",
+    // clientIdScheme is removed (deprecated)
   };
 
   if (options.scope) {
