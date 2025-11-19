@@ -893,3 +893,92 @@ const requestObject = await generateRequestObjectJwt(clientId, jwk, {
 - [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
 - [RFC 5280 - X.509 Certificate and CRL Profile](https://datatracker.ietf.org/doc/html/rfc5280)
 - [RFC 7515 - JSON Web Signature (JWS)](https://datatracker.ietf.org/doc/html/rfc7515)
+
+---
+
+## 実施結果
+
+### 実装完了日
+2025-11-19
+
+### 実装方針の変更
+当初計画では後方互換性（`clientIdScheme`パラメータ）を維持する予定でしたが、ユーザー要望により**後方互換性は実装せず**、OID4VP 1.0仕様に完全準拠する方針に変更しました。
+
+### 実装内容
+
+#### Phase 1: ユーティリティ関数実装 ✅
+- **ファイル作成**:
+  - `src/oid4vp/client-id-utils.ts` (173行)
+  - `tests/oid4vp/client-id-prefix.test.ts` (268行)
+- **実装機能**:
+  - `parseClientId()`: Client IDからプレフィックスを抽出
+  - `formatClientId()`: プレフィックス付きClient ID生成
+  - `calculateX509Hash()`: X.509証明書のSHA-256ハッシュ計算（Base64URL）
+  - `validateClientId()`: Client IDとX.509証明書の検証
+- **テスト**: 37個のテスト全てパス
+
+#### Phase 2: auth-request.ts更新 ✅
+- **変更内容**:
+  - `clientIdScheme`パラメータを`GenerateRequestObjectOptions`から完全削除
+  - `generateRequestObjectPayload()`でプレフィックス検証追加
+  - `redirect_uri:`プレフィックスで署名使用時に警告出力
+- **削減**: 約45行削減（後方互換性コード削除）
+
+#### Phase 3: verifier.ts更新 ✅
+- **変更内容**:
+  - `startRequest()`で`parseClientId()`による新形式検出実装
+  - プレフィックスに応じて署名付き/なしリクエスト生成
+  - エラーメッセージを新形式に対応
+- **テスト更新**: `tests/oid4vp/verifier.test.ts`、`tests/oid4vp/end-to-end-encryption.test.ts`
+
+#### Phase 4: ドキュメント更新 ✅
+- **更新ファイル**:
+  - `docs/api-specification.md`: 新形式の例とプレフィックス説明追加
+  - `docs/oid4vp-implementation.md`: コード例を新形式に更新
+  - `docs/security.md`: Client Identifier Prefix説明追加、設定例更新
+
+#### Phase 5: 統合テスト ✅
+- **テスト結果**: 74個全テスト通過（1個はskip）
+- **E2Eテスト**: 暗号化機能との統合テスト含めて全てパス
+- **カバレッジ**: 全3種類のプレフィックスをテスト
+
+### コミット履歴
+- `3efd410`: feat: implement Client Identifier Prefix (OID4VP 1.0)
+- `fb53684`: refactor: remove deprecated client_id_scheme backward compatibility (OID4VP 1.0)
+
+### 影響範囲
+- **変更ファイル**: 7ファイル
+- **追加ファイル**: 2ファイル
+- **コード削減**: -89行、+80行（差分: -9行）
+
+### 使用方法
+
+```typescript
+// OID4VP 1.0の新形式（プレフィックス必須）
+const clientId = "x509_san_dns:your-verifier.com";
+
+const authRequest = await verifier.startRequest(request, clientId, {
+  issuerJwk: verifierJwk,
+  x5c: verifierX5c,
+  requestObject: {
+    responseUri: "https://your-verifier.com/oid4vp/responses",
+    dcqlQuery: query,
+  },
+});
+```
+
+### 対応完了項目
+- ✅ `redirect_uri:` プレフィックス対応
+- ✅ `x509_san_dns:` プレフィックス対応
+- ✅ `x509_hash:` プレフィックス対応
+- ✅ プレフィックス検証機能
+- ✅ X.509証明書ハッシュ計算
+- ✅ SAN DNS名検証
+- ✅ 包括的なテストカバレッジ
+- ✅ ドキュメント更新
+- ✅ 後方互換性削除（ユーザー要望）
+
+### 備考
+- 後方互換性を削除したため、全てのClient IDはプレフィックスを含む必要があります
+- 旧形式（`client_id_scheme`パラメータ使用）はサポートされません
+- OID4VP 1.0仕様に完全準拠
