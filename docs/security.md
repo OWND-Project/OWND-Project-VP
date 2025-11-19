@@ -907,18 +907,333 @@ npm audit fix
 - [ ] SQLiteデータベースのバックアップ確認
 - [ ] 期限切れデータのクリーンアップ確認
 
+## 11. VP Token暗号化 (HAIP準拠)
+
+### 概要
+
+High Assurance Interoperability Profile (HAIP) の要件に従い、VP TokenをJWE (JSON Web Encryption) 形式で暗号化する機能をサポートしています。これにより、Walletから送信されるクレデンシャル情報を、転送中の第三者から保護します。
+
+### 暗号化方式
+
+| 項目 | 仕様 | 説明 |
+|------|------|------|
+| **鍵合意アルゴリズム** | ECDH-ES | Elliptic Curve Diffie-Hellman Ephemeral-Static |
+| **暗号化方式** | A128GCM | AES-GCM with 128-bit key |
+| **楕円曲線** | P-256 | secp256r1 (NIST P-256) |
+| **JWEフォーマット** | Compact Serialization | `header.encryptedKey.iv.ciphertext.tag` |
+
+### 鍵管理
+
+#### エフェメラル鍵ペアの生成
+
+**ファイル**: `src/helpers/jwt-helper.ts`
+
+```typescript
+import { generateKeyPairSync } from "crypto";
+import { publicJwkFromPrivate } from "elliptic-jwk";
+
+export const generateEphemeralKeyPair = () => {
+  const { privateKey } = generateKeyPairSync("ec", {
+    namedCurve: "P-256",  // NIST P-256曲線
+  });
+
+  const privateJwk = privateKey.export({ format: "jwk" });
+  const publicJwk = publicJwkFromPrivate(privateJwk);
+
+  return { privateJwk, publicJwk };
+};
+```
+
+**特徴**:
+- **Forward Secrecy**: 各リクエストごとに新しいエフェメラル鍵ペアを生成
+- **短期間の鍵**: 鍵はリクエストの有効期限（デフォルト10分）とともに自動削除
+- **統計的独立性**: 各セッションの鍵は完全に独立
+
+#### 鍵のライフサイクル
+
+```mermaid
+stateDiagram-v2
+    [*] --> Generated: initiateTransaction()
+    Generated --> StoredInDB: requestsテーブルに保存
+    StoredInDB --> UsedForDecryption: receiveAuthResponse()
+    UsedForDecryption --> Expired: リクエスト有効期限切れ
+    Expired --> [*]: 自動削除
+```
+
+**鍵保存場所**:
+- **秘密鍵**: `requests.encryption_private_jwk` (TEXT型, JWK JSON文字列)
+- **公開鍵**: Request Objectの`client_metadata.jwks`に含めてWalletに送信
+
+**鍵削除タイミング**:
+- リクエスト有効期限切れ時（デフォルト: 600秒 / 10分）
+- クリーンアップジョブによる期限切れデータの削除時
+
+### 暗号化プロトコル
+
+#### 1. Verifier側: 公開鍵の配布
+
+**エンドポイント**: `GET /oid4vp/request?id=req-123`
+
+**Request Objectペイロード**:
+
+```json
+{
+  "response_type": "vp_token id_token",
+  "response_mode": "direct_post.jwt",
+  "client_metadata": {
+    "jwks": {
+      "keys": [
+        {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "WKn-ZIGevcwGIyyrzFoZNBdaq9_TsqzGl96oc0CWuis",
+          "y": "y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
+          "kid": "enc-key-123",
+          "use": "enc",
+          "alg": "ECDH-ES"
+        }
+      ]
+    },
+    "encrypted_response_enc_values_supported": ["A128GCM"]
+  }
+}
+```
+
+**セキュリティポイント**:
+- `response_mode: "direct_post.jwt"`: 暗号化レスポンスを要求
+- `jwks.keys[0]`: Verifierの暗号化用公開鍵（P-256）
+- `encrypted_response_enc_values_supported`: サポートする暗号化方式を明示
+
+#### 2. Wallet側: VP Tokenの暗号化
+
+Walletは以下の手順でVP Tokenを暗号化します:
+
+```typescript
+// 1. Verifierの公開鍵取得
+const publicJwk = requestObject.client_metadata.jwks.keys[0];
+
+// 2. ペイロード準備
+const payload = {
+  vp_token: { affiliation_credential: ["SD-JWT..."] },
+  id_token: "eyJhbGciOi...",
+  state: "req-123"
+};
+
+// 3. JWE暗号化
+//    - alg: ECDH-ES (鍵合意)
+//    - enc: A128GCM (暗号化)
+const jwe = await compactEncrypt(
+  new TextEncoder().encode(JSON.stringify(payload)),
+  await importJWK(publicJwk, "ECDH-ES"),
+  {
+    alg: "ECDH-ES",
+    enc: "A128GCM",
+    kid: publicJwk.kid
+  }
+);
+
+// 4. 送信
+await fetch("/oid4vp/responses", {
+  method: "POST",
+  headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  body: `response=${encodeURIComponent(jwe)}`
+});
+```
+
+**セキュリティポイント**:
+- **ECDH-ES**: Walletは独自のエフェメラル鍵ペアを生成し、Verifierの公開鍵と組み合わせて共通鍵を導出
+- **A128GCM**: 認証付き暗号化により、暗号文の改ざん検知が可能
+- **JWEヘッダー**: Walletの公開鍵を`epk`フィールドに含める
+
+#### 3. Verifier側: VP Tokenの復号化
+
+**ファイル**: `src/helpers/jwt-helper.ts`
+
+```typescript
+import { compactDecrypt, importJWK } from "jose";
+
+export const decryptJWE = async (jwe: string, privateJwk: any) => {
+  // 1. JWE復号化
+  const { plaintext } = await compactDecrypt(
+    jwe,
+    await importJWK(privateJwk, "ECDH-ES")
+  );
+
+  // 2. ペイロードデコード
+  const decoder = new TextDecoder();
+  const payload = JSON.parse(decoder.decode(plaintext));
+
+  return payload;
+};
+```
+
+**処理フロー**:
+
+```typescript
+const receiveAuthResponse = async (payload) => {
+  const { response, state } = payload;
+
+  // 1. リクエスト取得
+  const request = await getRequest(state || extractStateFromJWE(response));
+
+  // 2. 暗号化レスポンスの場合: JWE復号化
+  let actualPayload;
+  if (response) {
+    // DB から秘密鍵取得
+    const privateJwk = JSON.parse(request.encryption_private_jwk);
+
+    // JWE復号化
+    actualPayload = await decryptJWE(response, privateJwk);
+  } else {
+    // 非暗号化レスポンス
+    actualPayload = payload;
+  }
+
+  const { vp_token, id_token, state: actualState } = actualPayload;
+
+  // 3. 以降は通常のVP Token検証フロー
+  // ...
+};
+```
+
+**セキュリティポイント**:
+- **秘密鍵の取り出し**: DB保存された秘密鍵を使用（一時的にメモリに読み込み）
+- **復号化検証**: A128GCMの認証タグ検証により、改ざん検知
+- **エラーハンドリング**: 復号化失敗時は適切なエラーを返す
+
+### JWE構造
+
+**Compact Serialization形式**:
+
+```
+eyJhbGciOiJFQ0RILUVT...  ← ヘッダー (Base64URL)
+.
+                        ← 暗号化キー (空: ECDH-ESの場合)
+.
+8Q1SzinasR3xchYz8ZIw...  ← 初期化ベクトル (Base64URL)
+.
+yVi-LdQQngN0C9JwUL-P...  ← 暗号文 (Base64URL)
+.
+WuGzxmcreYjpHGJoa17EBg  ← 認証タグ (Base64URL)
+```
+
+**JWEヘッダー** (デコード後):
+
+```json
+{
+  "alg": "ECDH-ES",
+  "enc": "A128GCM",
+  "kid": "enc-key-123",
+  "epk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0",
+    "y": "SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps"
+  }
+}
+```
+
+**フィールド説明**:
+- `alg`: 鍵合意アルゴリズム（ECDH-ES）
+- `enc`: 暗号化方式（A128GCM）
+- `kid`: Verifierの公開鍵ID
+- `epk`: Walletが生成したエフェメラル公開鍵
+
+### セキュリティ分析
+
+#### 脅威モデル
+
+| 脅威 | 対策 | 説明 |
+|------|------|------|
+| **盗聴** | ECDH-ES + A128GCM | VP Tokenを暗号化し、第三者が内容を読めないようにする |
+| **改ざん** | A128GCM認証タグ | GCM modeの認証タグにより、暗号文の改ざんを検知 |
+| **リプレイ攻撃** | Nonce検証 | VP Token内のNonceを検証し、再送攻撃を防止 |
+| **鍵の漏洩** | エフェメラル鍵 | 各リクエストごとに新しい鍵を生成し、過去のセッションへの影響を最小化 |
+| **Forward Secrecy侵害** | ECDH-ES | 秘密鍵が漏洩しても、過去のセッションは復号化不可能 |
+
+#### セキュリティプロパティ
+
+1. **機密性 (Confidentiality)**:
+   - A128GCMによる暗号化でVP Tokenの内容を保護
+   - 鍵長128ビットは、現在の暗号学的標準に適合
+
+2. **完全性 (Integrity)**:
+   - A128GCMの認証タグ（128ビット）により、改ざん検知
+   - VP Token検証（JWT署名検証）による多層防御
+
+3. **認証 (Authentication)**:
+   - Verifierの公開鍵はRequest Object（X.509証明書で署名）に含まれる
+   - Walletはclient_id_scheme (x509_san_dns) により、Verifierの身元を検証
+
+4. **Forward Secrecy**:
+   - エフェメラル鍵使用により、過去のセッションの機密性を保証
+   - 秘密鍵が漏洩しても、過去の通信は復号化不可能
+
+5. **鍵の隔離 (Key Isolation)**:
+   - 各リクエストは統計的に独立した鍵ペアを使用
+   - あるセッションの鍵漏洩が他のセッションに影響しない
+
+### 暗号化の有効化
+
+**環境変数**:
+
+```bash
+export OID4VP_USE_ENCRYPTION=true
+```
+
+**設定確認**:
+
+```typescript
+if (process.env.OID4VP_USE_ENCRYPTION === "true") {
+  // 暗号化有効
+  responseMode = "direct_post.jwt";
+  const { privateJwk, publicJwk } = generateEphemeralKeyPair();
+  // ...
+} else {
+  // 暗号化無効
+  responseMode = "direct_post";
+}
+```
+
+### ベストプラクティス
+
+1. **本番環境では暗号化を必須にする**:
+   - `OID4VP_USE_ENCRYPTION=true`を設定
+   - HAIP準拠により、高セキュリティな運用を実現
+
+2. **HTTPS通信の併用**:
+   - VP Token暗号化は転送層のセキュリティを補完
+   - TLS 1.2以上の使用を推奨
+
+3. **鍵の定期的なローテーション**:
+   - エフェメラル鍵により、自動的に鍵ローテーション
+   - リクエスト有効期限（デフォルト10分）後に自動削除
+
+4. **監査ログの記録**:
+   - 暗号化/復号化イベントをログに記録
+   - 異常なパターン（復号化失敗など）を検知
+
+### パフォーマンス考慮事項
+
+- **鍵生成オーバーヘッド**: P-256鍵生成は約1-2ms（現代的なCPUで）
+- **暗号化/復号化オーバーヘッド**: JWE処理は約5-10ms
+- **データベース保存**: 秘密鍵（JWK JSON）は約200-300バイト
+
+**推奨**: 本番環境ではパフォーマンスよりもセキュリティを優先し、暗号化を有効化
+
 ## まとめ
 
 OID4VP Verifierのセキュリティ実装は、以下の原則に基づいています：
 
-1. **多層防御**: 複数のセキュリティレイヤーで保護（HTTPS、Cookie、JWT、X.509）
+1. **多層防御**: 複数のセキュリティレイヤーで保護（HTTPS、Cookie、JWT、X.509、JWE暗号化）
 2. **最小権限**: 必要最小限のアクセス権のみ付与
-3. **暗号化**: TLS通信とJWT署名による暗号化
-4. **検証**: すべての入力とトークンを検証（Nonce、State、署名、証明書）
+3. **暗号化**: TLS通信、JWT署名、VP Token暗号化（HAIP準拠）による機密性保護
+4. **検証**: すべての入力とトークンを検証（Nonce、State、署名、証明書、認証タグ）
 5. **ログ記録**: セキュリティイベントの記録と監視
 6. **定期的な更新**: 依存関係とセキュリティパッチの適用
+7. **Forward Secrecy**: エフェメラル鍵によるセッション間の独立性確保
 
-この設計により、Verifiable Credentialsの信頼性と整合性を保ちながら、安全なシステム運用を実現しています。
+この設計により、Verifiable Credentialsの信頼性と整合性を保ちながら、HAIP準拠の高セキュリティなシステム運用を実現しています。
 
 ## 参考資料
 

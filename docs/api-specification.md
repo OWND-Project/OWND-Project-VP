@@ -124,6 +124,63 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
 }
 ```
 
+**暗号化対応時のレスポンス例** (HAIP準拠):
+
+```json
+{
+  "response_type": "vp_token id_token",
+  "response_mode": "direct_post.jwt",
+  "response_uri": "http://localhost:3000/oid4vp/responses",
+  "client_id": "http://localhost:3000",
+  "client_id_scheme": "x509_san_dns",
+  "nonce": "n-0S6_WzA2Mj",
+  "state": "req_abc123",
+  "client_metadata": {
+    "jwks": {
+      "keys": [
+        {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "WKn-ZIGevcwGIyyrzFoZNBdaq9_TsqzGl96oc0CWuis",
+          "y": "y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
+          "kid": "enc-key-123",
+          "use": "enc",
+          "alg": "ECDH-ES"
+        }
+      ]
+    },
+    "encrypted_response_enc_values_supported": ["A128GCM"]
+  },
+  "dcql_query": {
+    "credentials": [
+      {
+        "id": "affiliation_credential",
+        "format": "vc+sd-jwt",
+        "meta": {
+          "vct_values": ["https://example.com/AffiliationCredential"]
+        },
+        "claims": [
+          {
+            "path": ["organization"]
+          },
+          {
+            "path": ["portrait"]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**暗号化時の追加フィールド**:
+
+| フィールド | 型 | 説明 |
+|-----------|---|------|
+| `response_mode` | string | 暗号化時は`direct_post.jwt`を使用 |
+| `client_metadata.jwks` | object | 暗号化用公開鍵（ECDH-ES P-256） |
+| `client_metadata.encrypted_response_enc_values_supported` | array | サポートする暗号化方式（A128GCM） |
+
 **レスポンスボディ**:
 
 OID4VP 1.0 Request Object with DCQL Query（詳細は[OID4VP 1.0仕様](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)を参照）
@@ -154,11 +211,47 @@ vp_token=%7B%22affiliation_credential%22%3A%5B%22eyJ0eXAiOi...%22%5D%7D&id_token
 
 **リクエストボディ** (application/x-www-form-urlencoded):
 
+#### 非暗号化レスポンス (response_mode: "direct_post")
+
 | フィールド | 型 | 必須 | 説明 |
 |-----------|---|------|------|
 | `vp_token` | string | ✓ | VP Token（DCQL形式: `{"credential_id": ["SD-JWT1", "SD-JWT2", ...]}`のJSON文字列） |
 | `id_token` | string | ✓ | ID Token（JWT形式） |
 | `state` | string | ✓ | リクエスト時のState値（`request_id`） |
+
+#### 暗号化レスポンス (response_mode: "direct_post.jwt")
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|---|------|------|
+| `response` | string | ✓ | JWE形式で暗号化されたレスポンス（ペイロードに`vp_token`, `id_token`, `state`を含む） |
+
+**JWEペイロード** (復号化後):
+
+```json
+{
+  "vp_token": {
+    "affiliation_credential": ["eyJ0eXAiOi..."]
+  },
+  "id_token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "state": "req_abc123"
+}
+```
+
+**JWEヘッダー**:
+
+```json
+{
+  "alg": "ECDH-ES",
+  "enc": "A128GCM",
+  "kid": "enc-key-123",
+  "epk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0",
+    "y": "SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps"
+  }
+}
+```
 
 **レスポンス** (200 OK):
 
@@ -175,14 +268,19 @@ vp_token=%7B%22affiliation_credential%22%3A%5B%22eyJ0eXAiOi...%22%5D%7D&id_token
 | `redirect_uri` | string | クライアントへのリダイレクトURI（レスポンスコード含む） |
 
 **検証処理**:
-1. ID Tokenの署名検証（JWS/JWT）
-2. X.509証明書チェーン検証（x5cヘッダーがある場合）
-3. VP Token（DCQL形式）のパース
-4. 所属証明クレデンシャル(SD-JWT)の抽出
-5. SD-JWTの署名検証およびKey Binding JWT検証
-6. Nonceの検証
-7. **VP Token検証成功後、自動的にcommitted状態に遷移**
-8. レスポンスコードを生成してresponse_codesテーブルに保存
+1. リクエストモードの判定（`response`パラメータの有無で暗号化を判定）
+2. **暗号化レスポンスの場合**:
+   - requestsテーブルから`encryption_private_jwk`を取得
+   - ECDH-ES + A128GCMでJWEを復号化
+   - ペイロードから`vp_token`, `id_token`, `state`を抽出
+3. ID Tokenの署名検証（JWS/JWT）
+4. X.509証明書チェーン検証（x5cヘッダーがある場合）
+5. VP Token（DCQL形式）のパース
+6. 所属証明クレデンシャル(SD-JWT)の抽出
+7. SD-JWTの署名検証およびKey Binding JWT検証
+8. Nonceの検証
+9. **VP Token検証成功後、自動的にcommitted状態に遷移**
+10. レスポンスコードを生成してresponse_codesテーブルに保存
 
 **エラーレスポンス**:
 

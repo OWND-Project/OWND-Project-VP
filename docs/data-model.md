@@ -111,7 +111,8 @@ CREATE TABLE requests (
   redirect_uri_returned_by_response_uri TEXT,  -- Response URIから返却されるRedirect URI
   transaction_id TEXT,                   -- トランザクションID (オプション)
   created_at INTEGER NOT NULL,           -- 作成日時
-  expires_at INTEGER NOT NULL            -- 有効期限
+  expires_at INTEGER NOT NULL,           -- 有効期限
+  encryption_private_jwk TEXT            -- VP Token暗号化用エフェメラル秘密鍵 (JWK JSON文字列, HAIP対応)
 );
 
 CREATE INDEX idx_requests_expires_at ON requests(expires_at);
@@ -128,6 +129,7 @@ CREATE INDEX idx_requests_transaction_id ON requests(transaction_id);
 | `transaction_id` | TEXT | YES | トランザクション追跡用ID |
 | `created_at` | INTEGER | NO | リクエスト作成時刻 |
 | `expires_at` | INTEGER | NO | リクエスト有効期限 |
+| `encryption_private_jwk` | TEXT | YES | VP Token暗号化用エフェメラル秘密鍵 (ECDH-ES P-256, HAIP準拠) |
 
 #### データ例
 
@@ -138,9 +140,24 @@ CREATE INDEX idx_requests_transaction_id ON requests(transaction_id);
   "redirect_uri_returned_by_response_uri": "https://verifier.example.com/callback",
   "transaction_id": "txn_xyz789",
   "created_at": 1700000000,
-  "expires_at": 1700000600
+  "expires_at": 1700000600,
+  "encryption_private_jwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"...\",\"y\":\"...\",\"d\":\"...\",\"kid\":\"key-123\",\"use\":\"enc\",\"alg\":\"ECDH-ES\"}"
 }
 ```
+
+#### 暗号化対応 (HAIP準拠)
+
+`encryption_private_jwk`フィールドは、HAIP (High Assurance Interoperability Profile) 要件に対応するため、VP Tokenレスポンスの暗号化に使用されます。
+
+- **アルゴリズム**: ECDH-ES (Elliptic Curve Diffie-Hellman Ephemeral-Static)
+- **暗号化方式**: A128GCM (AES-GCM 128-bit)
+- **楕円曲線**: P-256 (secp256r1)
+- **鍵のライフサイクル**: リクエストごとに新しいエフェメラル鍵ペアを生成、有効期限後に削除
+- **使用方法**:
+  - Response Endpointが`initiateTransaction`時に鍵ペアを生成
+  - 公開鍵はVerifierの`client_metadata.jwks`に含めてWalletに送信
+  - Walletは公開鍵を使ってVP Tokenを暗号化（JWE形式）
+  - Response Endpointは秘密鍵を使ってJWEを復号化
 
 ---
 
