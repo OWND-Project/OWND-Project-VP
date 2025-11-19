@@ -7,24 +7,9 @@ import {
 } from "../../src/usecases/types.js";
 import {
   AuthorizationRequest,
-  camelToSnake,
 } from "../../src/oid4vp/index.js";
 
-// INPUT_DESCRIPTOR_ID2 removed - PEX deprecated
-const INPUT_DESCRIPTOR_ID2 = "affiliation_credential"; // DCQL credential query ID
-
-// Deprecated PEX types - defined locally for backward compatibility in tests
-interface DescriptorMap {
-  id: string;
-  path: string;
-  format: string;
-}
-
-interface PresentationSubmission {
-  id: string;
-  definitionId: string;
-  descriptorMap: DescriptorMap[];
-}
+// PEX deprecated - DCQL is now used for credential queries
 import { createIdToken, createKeyPair, createSdJwt } from "../test-utils.js";
 import { issueJwtUsingX5C } from "../oid4vp/test-utils.js";
 import { issueJwt } from "../../src/helpers/jwt-helper.js";
@@ -142,19 +127,7 @@ export const initPostFixtures = () => {
   const header = { alg: "ES256", jwk: publicJwkFromPrivate(issuerKeyPair) };
 
   const response1 = async (vpRequest: Ret) => {
-    const { requestId, nonce, definitionId } = vpRequest;
-
-    // ------------------------ presentation submission -------------------------
-    const map1 = {
-      id: INPUT_DESCRIPTOR_ID2,
-      path: "$",
-      format: "vc+sd-jwt",
-    };
-    const submission: PresentationSubmission = {
-      id: faker.string.uuid(),
-      definitionId: definitionId!,
-      descriptorMap: [map1],
-    };
+    const { requestId, nonce } = vpRequest;
 
     // ------------------------ id_token -------------------------
     const keyPair = createKeyPair("secp256k1");
@@ -177,24 +150,11 @@ export const initPostFixtures = () => {
       state: requestId,
       vp_token: vpToken,
       id_token: idToken,
-      presentation_submission: JSON.stringify(camelToSnake(submission)),
     };
   };
 
   const response2 = async (vpRequest: Ret) => {
-    const { requestId, nonce, definitionId } = vpRequest;
-
-    // ------------------------ presentation submission -------------------------
-    const map1 = {
-      id: INPUT_DESCRIPTOR_ID2,
-      path: "$",
-      format: "vc+sd-jwt",
-    };
-    const submission: PresentationSubmission = {
-      id: faker.string.uuid(),
-      definitionId: definitionId!,
-      descriptorMap: [map1],
-    };
+    const { requestId, nonce } = vpRequest;
 
     // ------------------------ id_token -------------------------
     const keyPair = createKeyPair("secp256k1");
@@ -217,7 +177,6 @@ export const initPostFixtures = () => {
       state: requestId,
       vp_token: vpToken,
       id_token: idToken,
-      presentation_submission: JSON.stringify(camelToSnake(submission)),
     };
   };
   return { memo, response1, response2 };

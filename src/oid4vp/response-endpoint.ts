@@ -185,8 +185,7 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
       }
     }
 
-    const { state, vp_token, presentation_submission, id_token } =
-      decryptedPayload;
+    const { state, vp_token, id_token } = decryptedPayload;
 
     const error: InvalidAuthResponsePayloadError = {
       type: "INVALID_AUTH_RESPONSE_PAYLOAD",
@@ -198,13 +197,13 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
     if (!__request) {
       return { ok: false, error: { type: "REQUEST_ID_IS_NOT_FOUND" } };
     }
-    const { id, responseType, redirectUriReturnedByResponseUri } = __request;
+    const { responseType, redirectUriReturnedByResponseUri } = __request;
     if (responseType === "vp_token") {
-      if (!vp_token || !presentation_submission) {
+      if (!vp_token) {
         return { ok: false, error };
       }
     } else if (responseType === "vp_token id_token") {
-      if (!vp_token || !presentation_submission || !id_token) {
+      if (!vp_token || !id_token) {
         return { ok: false, error };
       }
     } else if (responseType === "id_token") {
@@ -217,7 +216,6 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
     const authResponse: Partial<AuthResponsePayload> = {};
     if (vp_token) {
       authResponse.vpToken = vp_token;
-      authResponse.presentationSubmission = presentation_submission;
     }
     if (id_token) {
       authResponse.idToken = id_token;

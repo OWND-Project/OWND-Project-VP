@@ -57,7 +57,6 @@ describe("ResponseEndpoint", () => {
   describe("#receiveAuthResponse", () => {
     // DCQL format: JSON object with credential query ID as key
     const vpToken = { affiliation_credential: ["dummy-vp-token"] };
-    const presentationSubmission = "dummy-presentation-submission"; // Deprecated but kept for backward compatibility
     const idToken = "dummy-id-token";
     describe("fake state", () => {
       it("should not save auth response", async () => {
@@ -76,7 +75,6 @@ describe("ResponseEndpoint", () => {
         const payload = {
           state: requestId,
           vp_token: vpToken,
-          presentation_submission: presentationSubmission,
           id_token: idToken,
         };
         const result = await responseEndpoint.receiveAuthResponse(payload);
@@ -113,10 +111,6 @@ describe("ResponseEndpoint", () => {
             responseIdSetInDatastore = response.id;
             assert.equal(response.requestId, requestId);
             assert.deepEqual(response.payload.vpToken, vpToken);
-            assert.equal(
-              response.payload.presentationSubmission,
-              presentationSubmission,
-            );
             assert.equal(response.payload.idToken, idToken);
           },
         };
@@ -124,7 +118,6 @@ describe("ResponseEndpoint", () => {
         const payload = {
           state: requestId,
           vp_token: vpToken,
-          presentation_submission: presentationSubmission,
           id_token: idToken,
         };
         const result = await responseEndpoint.receiveAuthResponse(payload);

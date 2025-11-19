@@ -268,4 +268,101 @@ describe("Verifier", () => {
   // Removed: #getDescriptor tests (PEX deprecated)
   // Removed: #getPresentation tests (PEX deprecated)
   // Removed: #getCredential tests (PEX deprecated)
+
+  describe("#startRequest with encryption", () => {
+    it("should include encryption public key in client_metadata when provided", async () => {
+      const id = uuidv4();
+      const responseType = "vp_token";
+      const issuedAt = getCurrentUnixTimeInSeconds();
+      const expiredIn = 60;
+      const clientId = faker.internet.url();
+      const responseUri = faker.internet.url();
+
+      // Mock encryption keys (simulating Response Endpoint generated keys)
+      const mockPublicJwk = {
+        kty: "EC",
+        crv: "P-256",
+        x: "test-x-coordinate",
+        y: "test-y-coordinate",
+        kid: "test-kid-123",
+        use: "enc",
+        alg: "ECDH-ES",
+      };
+
+      const request: VpRequest = {
+        id,
+        responseType,
+        issuedAt,
+        expiredIn,
+        encryptionPublicJwk: JSON.stringify(mockPublicJwk),
+        encryptionPrivateJwk: JSON.stringify({ ...mockPublicJwk, d: "test-private" }),
+      };
+
+      const result = await verifier.startRequest(request, clientId, {
+        requestObject: {
+          responseUri,
+          clientIdScheme: "redirect_uri",
+        },
+      });
+
+      // Verify request object contains client_metadata with encryption info
+      assert.isDefined(result.params);
+      if (result.params) {
+        assert.isDefined(result.params.client_metadata);
+        const clientMetadata = result.params.client_metadata;
+
+        // Check jwks
+        assert.isDefined(clientMetadata.jwks);
+        assert.isArray(clientMetadata.jwks.keys);
+        assert.equal(clientMetadata.jwks.keys.length, 1);
+        assert.equal(clientMetadata.jwks.keys[0].kid, mockPublicJwk.kid);
+        assert.equal(clientMetadata.jwks.keys[0].use, "enc");
+        assert.equal(clientMetadata.jwks.keys[0].alg, "ECDH-ES");
+
+        // Check encrypted_response_enc_values_supported
+        assert.isDefined(clientMetadata.encrypted_response_enc_values_supported);
+        assert.include(clientMetadata.encrypted_response_enc_values_supported, "A128GCM");
+
+        // Check response_mode
+        assert.equal(result.params.response_mode, "direct_post.jwt");
+      }
+    });
+
+    it("should not include encryption metadata when encryption keys not provided", async () => {
+      const id = uuidv4();
+      const responseType = "vp_token";
+      const issuedAt = getCurrentUnixTimeInSeconds();
+      const expiredIn = 60;
+      const clientId = faker.internet.url();
+      const responseUri = faker.internet.url();
+
+      const request: VpRequest = {
+        id,
+        responseType,
+        issuedAt,
+        expiredIn,
+        // No encryption keys
+      };
+
+      const result = await verifier.startRequest(request, clientId, {
+        requestObject: {
+          responseUri,
+          clientIdScheme: "redirect_uri",
+        },
+      });
+
+      // Verify request object does NOT contain encryption metadata
+      assert.isDefined(result.params);
+      if (result.params) {
+        // response_mode should be default (not direct_post.jwt)
+        assert.notEqual(result.params.response_mode, "direct_post.jwt");
+
+        // client_metadata should not have encryption fields (or be undefined)
+        if (result.params.client_metadata) {
+          assert.isUndefined(result.params.client_metadata.jwks);
+          assert.isUndefined(result.params.client_metadata.encrypted_response_enc_values_supported);
+        }
+      }
+    });
+  });
 });

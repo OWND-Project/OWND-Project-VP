@@ -13,7 +13,7 @@
 | Phase 1 | エフェメラル鍵ペア生成・保存 | ✅ 完了 | Response Endpoint側で鍵生成。jwt-helper.ts, response-endpoint.ts, oid4vp-repository.ts更新 |
 | Phase 2 | client_metadata拡張 | ✅ 完了 | types.ts (jwks, encryptedResponseEncValuesSupported追加), auth-request.ts (direct_post.jwt対応), verifier.ts (公開鍵をclient_metadataに含める) |
 | Phase 3 | Response Endpoint JWE復号化 | ✅ 完了 | response-endpoint.ts に JWE 復号化処理追加。stateパラメータ(平文)でrequest特定 |
-| Phase 4 | テスト実装 | ✅ 完了 | tests/helpers/jwt-helper.test.ts 追加 (鍵生成、暗号化/復号化テスト)。全テスト合格 (30 passing) |
+| Phase 4 | テスト実装 | ✅ 完了 | 全5カテゴリのテスト実装完了。45テスト全て合格 |
 | Phase 5 | ドキュメント更新 | ✅ 完了 | 本ドキュメントに進捗状況反映 |
 
 ## 実装サマリー
@@ -36,18 +36,45 @@
 - `src/oid4vp/verifier.ts` - encryptionPublicJwk を client_metadata に含める処理
 - `src/oid4vp/response-endpoint.ts` - initiateTransaction で鍵生成、receiveAuthResponse で JWE 復号化
 - `src/usecases/oid4vp-repository.ts` - ResponseEndpointDatastore, VerifierDatastore に暗号化カラム対応
-- `tests/helpers/jwt-helper.test.ts` - JWE暗号化/復号化テスト追加
+- `tests/helpers/jwt-helper.test.ts` - JWE暗号化/復号化テスト追加（鍵生成、アルゴリズム検証、改ざん検出）
+- `tests/oid4vp/response-endpoint-encryption.test.ts` - エラーハンドリングテスト追加
+- `tests/oid4vp/verifier.test.ts` - client_metadata生成テスト追加
+- `tests/oid4vp/end-to-end-encryption.test.ts` - エンドツーエンド統合テスト追加
 
 ### テスト結果
 
 ```
+End-to-End Encryption Flow
+  Complete encrypted flow
+    ✔ should successfully complete end-to-end encrypted VP Token flow
+    ✔ should handle non-encrypted flow when encryption not enabled
+  Error scenarios in end-to-end flow
+    ✔ should fail when encrypted response sent but request not set up for encryption
+    ✔ should fail when plaintext response sent but encryption was required
+
 JWT Helper - JWE Encryption
   #generateEphemeralKeyPair
     ✔ should generate ECDH-ES key pair with P-256 curve
   #decryptJWE
     ✔ should decrypt JWE encrypted with ECDH-ES + A128GCM
+    ✔ should reject JWE with unsupported algorithm (RSA-OAEP)
+    ✔ should reject JWE with unsupported encryption method (A256GCM)
+    ✔ should detect tampering via authentication tag verification
+    ✔ should verify ECDH key exchange works correctly
 
-全テスト: 30 passing (105ms)
+Response Endpoint - Encryption Error Handling
+  ✔ should reject encrypted response when request not found
+  ✔ should reject encrypted response when request has no encryption key
+  ✔ should reject malformed JWE string
+  ✔ should reject encrypted response without state parameter
+  ✔ should successfully decrypt and process encrypted response
+
+Verifier
+  #startRequest with encryption
+    ✔ should include encryption public key in client_metadata when provided
+    ✔ should not include encryption metadata when encryption keys not provided
+
+全テスト: 45 passing (118ms)
 TypeScriptコンパイル: ✅ エラーなし
 ```
 
@@ -433,33 +460,37 @@ export async function decryptJWE(
 
 ### 1. エフェメラル鍵生成テスト
 
-- [ ] 鍵ペア生成成功
-- [ ] JWK形式の妥当性確認
-- [ ] kid付与確認
+- [x] 鍵ペア生成成功 (tests/helpers/jwt-helper.test.ts:11-26)
+- [x] JWK形式の妥当性確認 (kty=EC, crv=P-256, use=enc, alg=ECDH-ES)
+- [x] kid付与確認 (UUID形式)
 
 ### 2. client_metadata生成テスト
 
-- [ ] jwks含むclient_metadata生成
-- [ ] encryptedResponseEncValuesSupported設定確認
+- [x] jwks含むclient_metadata生成 (tests/oid4vp/verifier.test.ts:273-329)
+- [x] encryptedResponseEncValuesSupported設定確認 (A128GCM)
 
 ### 3. JWE暗号化/復号化テスト
 
-- [ ] Authorization Response暗号化（Wallet側シミュレーション）
-- [ ] JWE復号化成功
-- [ ] 復号化後のペイロード検証
-- [ ] 不正なJWEの検出
+- [x] Authorization Response暗号化（Wallet側シミュレーション）
+- [x] JWE復号化成功 (tests/helpers/jwt-helper.test.ts:30-52)
+- [x] 復号化後のペイロード検証
+- [x] 不正なJWEの検出 (tests/helpers/jwt-helper.test.ts:54-121)
 
 ### 4. エンドツーエンドテスト
 
-- [ ] 暗号化対応Authorization Request生成
-- [ ] 暗号化されたAuthorization Response受信
-- [ ] VP Token抽出・検証成功
+- [x] 暗号化対応Authorization Request生成 (tests/oid4vp/end-to-end-encryption.test.ts:68-192)
+- [x] 暗号化されたAuthorization Response受信 (完全なフロー検証)
+- [x] VP Token抽出・検証成功 (復号化後のペイロード検証)
+- [x] 非暗号化フローの後方互換性確認 (tests/oid4vp/end-to-end-encryption.test.ts:194-258)
+- [x] エラーシナリオ検証 (tests/oid4vp/end-to-end-encryption.test.ts:262-297)
 
 ### 5. エラーハンドリングテスト
 
-- [ ] 不正なkid
-- [ ] 不正なアルゴリズム
-- [ ] 破損したJWE
+- [x] 不正なkid (tests/oid4vp/response-endpoint-encryption.test.ts:39-63)
+- [x] 不正なアルゴリズム (tests/helpers/jwt-helper.test.ts:54-68)
+- [x] 破損したJWE (tests/oid4vp/response-endpoint-encryption.test.ts:100-119)
+- [x] 暗号化鍵なし (tests/oid4vp/response-endpoint-encryption.test.ts:66-98)
+- [x] stateパラメータなし (tests/oid4vp/response-endpoint-encryption.test.ts:121-147)
 
 ## 環境変数
 
