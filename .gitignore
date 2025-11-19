@@ -137,3 +137,6 @@ dist
 .pnp.*
 /oid4vp/
 apps
+
+# Work in progress documents (not for version control)
+docs/work.md
