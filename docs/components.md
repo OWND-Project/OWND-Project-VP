@@ -260,14 +260,21 @@ const request = await responseEndpoint.initiateTransaction({
 // 2. DCQL Query生成
 const dcqlQuery = verifier.generateDcqlQuery([
   {
-    id: "affiliation_credential",
+    id: "learning_credential",
     format: "vc+sd-jwt",
     meta: {
-      vct_values: ["https://example.com/AffiliationCredential"]
+      vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"]
     },
     claims: [
-      { path: ["organization"] },
-      { path: ["portrait"] }
+      { path: ["issuing_authority"] },
+      { path: ["issuing_country"] },
+      { path: ["date_of_issuance"] },
+      { path: ["family_name"] },
+      { path: ["given_name"] },
+      { path: ["achievement_title"] },
+      { path: ["achievement_description"] },
+      { path: ["learning_outcomes"] },
+      { path: ["assessment_grade"] }
     ]
   }
 ]);
@@ -677,16 +684,14 @@ export const exchangeResponseCodePresenter = (
   claimer: {
     sub: string;
     id_token: string;
-    organization?: string;
-    icon?: string;
+    learningCredential?: string;
   }
 ) => ({
   requestId,
   claimer: {
     id_token: claimer.id_token,
     sub: claimer.sub,
-    icon: claimer.icon,
-    organization: claimer.organization,
+    learningCredential: claimer.learningCredential,
   },
 });
 

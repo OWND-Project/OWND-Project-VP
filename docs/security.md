@@ -1020,7 +1020,7 @@ const publicJwk = requestObject.client_metadata.jwks.keys[0];
 
 // 2. ペイロード準備
 const payload = {
-  vp_token: { affiliation_credential: ["SD-JWT..."] },
+  vp_token: { learning_credential: ["SD-JWT..."] },
   id_token: "eyJhbGciOi...",
   state: "req-123"
 };

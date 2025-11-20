@@ -352,15 +352,44 @@ export interface WaitCommitData extends EntityWithLifeCycle {
 
 テスト結果: **73 passing (248ms), 1 pending** ✅
 
-#### Phase 4: ドキュメント更新 🔄
+#### Phase 4: ドキュメント更新 ✅
 
-**状態**: 未実施（次回コミット予定）
+**ファイル1**: `docs/api-specification.md`
 
-更新対象:
-- `docs/api-specification.md`
-- `docs/oid4vp-implementation.md`
-- `docs/components.md`
-- `docs/security.md` (該当箇所があれば)
+変更内容:
+- レスポンス例（2箇所）のdcql_queryを更新
+  - credential query ID: `affiliation_credential` → `learning_credential`
+  - vct_values: `https://example.com/AffiliationCredential` → `urn:eu.europa.ec.eudi:learning:credential:1`
+  - claimsフィールド: Learning Credentialの9フィールドに更新
+- 通常レスポンス例と暗号化対応時レスポンス例の両方を更新
+
+**ファイル2**: `docs/oid4vp-implementation.md`
+
+変更内容:
+- コード例（2箇所）のDCQL Query生成部分を更新
+  - credential query ID: `affiliation_credential` → `learning_credential`
+  - vct_values: `OrganizationalAffiliationCertificate` → `urn:eu.europa.ec.eudi:learning:credential:1`
+  - claimsフィールド: Learning Credentialの9フィールドに更新
+- 実装ガイドのJSON例を更新
+
+**ファイル3**: `docs/components.md`
+
+変更内容:
+- DCQL Query生成のコード例を更新
+  - credential query ID更新
+  - vct_values更新
+  - claimsフィールド: 9フィールドに更新
+- ExchangeResponseCodePresenterの型定義を更新
+  - `organization?: string` → 削除
+  - `icon?: string` → 削除
+  - `learningCredential?: string` → 追加
+- presenterの実装例を更新
+
+**ファイル4**: `docs/security.md`
+
+変更内容:
+- VP Token暗号化のコード例を更新
+  - `vp_token: { affiliation_credential: [...] }` → `vp_token: { learning_credential: [...] }`
 
 #### Phase 5: 統合テスト ✅
 
@@ -385,6 +414,10 @@ export interface WaitCommitData extends EntityWithLifeCycle {
 
 **ドキュメント**:
 - `docs/learning-credential-migration.md` (本ファイル)
+- `docs/api-specification.md`
+- `docs/oid4vp-implementation.md`
+- `docs/components.md`
+- `docs/security.md`
 
 ### 主な変更点まとめ
 
@@ -406,15 +439,16 @@ export interface WaitCommitData extends EntityWithLifeCycle {
    - SD-JWTのvctとclaimsを新仕様に準拠
    - 全73テスト合格
 
-### 次のステップ
+### 完了状況
 
-**残作業**:
-- [ ] `docs/api-specification.md`の更新
-- [ ] `docs/oid4vp-implementation.md`の更新
-- [ ] `docs/components.md`の更新
-- [ ] `docs/security.md`の更新（該当箇所があれば）
-- [ ] 最終動作確認
-- [ ] ドキュメント更新のコミット
+**全Phase完了** ✅:
+- [x] Phase 1: 型定義更新
+- [x] Phase 2: コアロジック更新
+- [x] Phase 3: テスト更新
+- [x] Phase 4: ドキュメント更新
+- [x] Phase 5: 統合テスト
+
+**最終テスト結果**: 73 passing (250ms), 1 pending ✅
 
 ### 備考
 

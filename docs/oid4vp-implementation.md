@@ -147,16 +147,21 @@ const generateAuthRequest = async (presenter) => {
   // 2. DCQL Query生成（OID4VP 1.0）
   const dcqlQuery = verifier.generateDcqlQuery([
     {
-      id: "affiliation_credential",
+      id: "learning_credential",
       format: "vc+sd-jwt",
       meta: {
-        vct_values: ["OrganizationalAffiliationCertificate"],
+        vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"],
       },
       claims: [
-        { path: ["organization_name"] },
+        { path: ["issuing_authority"] },
+        { path: ["issuing_country"] },
+        { path: ["date_of_issuance"] },
         { path: ["family_name"] },
         { path: ["given_name"] },
-        { path: ["portrait"] },
+        { path: ["achievement_title"] },
+        { path: ["achievement_description"] },
+        { path: ["learning_outcomes"] },
+        { path: ["assessment_grade"] },
       ],
     },
   ]);
@@ -212,16 +217,21 @@ const generateAuthRequest = async (presenter) => {
    {
      "credentials": [
        {
-         "id": "affiliation_credential",
+         "id": "learning_credential",
          "format": "vc+sd-jwt",
          "meta": {
-           "vct_values": ["OrganizationalAffiliationCertificate"]
+           "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
          },
          "claims": [
-           { "path": ["organization_name"] },
+           { "path": ["issuing_authority"] },
+           { "path": ["issuing_country"] },
+           { "path": ["date_of_issuance"] },
            { "path": ["family_name"] },
            { "path": ["given_name"] },
-           { "path": ["portrait"] }
+           { "path": ["achievement_title"] },
+           { "path": ["achievement_description"] },
+           { "path": ["learning_outcomes"] },
+           { "path": ["assessment_grade"] }
          ]
        }
      ]

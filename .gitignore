@@ -140,3 +140,6 @@ apps
 
 # Work in progress documents (not for version control)
 docs/work.md
+
+*.doc
+*.docx

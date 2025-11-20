@@ -104,17 +104,38 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
   "dcql_query": {
     "credentials": [
       {
-        "id": "affiliation_credential",
+        "id": "learning_credential",
         "format": "vc+sd-jwt",
         "meta": {
-          "vct_values": ["https://example.com/AffiliationCredential"]
+          "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
         },
         "claims": [
           {
-            "path": ["organization"]
+            "path": ["issuing_authority"]
           },
           {
-            "path": ["portrait"]
+            "path": ["issuing_country"]
+          },
+          {
+            "path": ["date_of_issuance"]
+          },
+          {
+            "path": ["family_name"]
+          },
+          {
+            "path": ["given_name"]
+          },
+          {
+            "path": ["achievement_title"]
+          },
+          {
+            "path": ["achievement_description"]
+          },
+          {
+            "path": ["learning_outcomes"]
+          },
+          {
+            "path": ["assessment_grade"]
           }
         ]
       }
@@ -158,17 +179,38 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
   "dcql_query": {
     "credentials": [
       {
-        "id": "affiliation_credential",
+        "id": "learning_credential",
         "format": "vc+sd-jwt",
         "meta": {
-          "vct_values": ["https://example.com/AffiliationCredential"]
+          "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
         },
         "claims": [
           {
-            "path": ["organization"]
+            "path": ["issuing_authority"]
           },
           {
-            "path": ["portrait"]
+            "path": ["issuing_country"]
+          },
+          {
+            "path": ["date_of_issuance"]
+          },
+          {
+            "path": ["family_name"]
+          },
+          {
+            "path": ["given_name"]
+          },
+          {
+            "path": ["achievement_title"]
+          },
+          {
+            "path": ["achievement_description"]
+          },
+          {
+            "path": ["learning_outcomes"]
+          },
+          {
+            "path": ["assessment_grade"]
           }
         ]
       }
