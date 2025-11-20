@@ -2,12 +2,20 @@ import Koa from "koa";
 import session, { opts } from "koa-session";
 import Router from "koa-router";
 import cors from "@koa/cors";
+import render from "koa-ejs";
+import serve from "koa-static";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import getLogger, { errorLogger } from "./services/logging-service.js";
 import { toErrorBody } from "./routes/error-handler.js";
 import oid4vpRoutes from "./routes/oid4vp-routes.js";
+import uiRoutes from "./routes/ui-routes.js";
 import routesLogger from "./middlewares/routes-logger.js";
 import { AppContext } from "./types/app-types.js";
 import { initClient } from "./database/sqlite-client.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // https://github.com/koajs/session
 const CONFIG: Partial<opts> = {
@@ -48,6 +56,18 @@ export const init = async () => {
   const app = new Koa();
   app.keys = [process.env.OID4VP_COOKIE_SECRET || ""];
 
+  // EJS setup
+  render(app, {
+    root: join(__dirname, "..", "views"),
+    layout: false,
+    viewExt: "ejs",
+    cache: process.env.NODE_ENV === "production",
+    debug: process.env.NODE_ENV !== "production",
+  });
+
+  // Static files
+  app.use(serve(join(__dirname, "..", "public")));
+
   app.use(routesLogger());
   app.use(session(CONFIG, app));
   app.proxy = true;
@@ -81,6 +101,10 @@ export const init = async () => {
   const appContext: AppContext = {
     db: sqliteClient.db,
   };
+
+  // UI routes
+  const uiRouter = await uiRoutes.routes(appContext);
+  app.use(uiRouter.routes()).use(uiRouter.allowedMethods());
 
   // OID4VP routes
   const oid4vpRouter = await oid4vpRoutes.routes(appContext);

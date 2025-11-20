@@ -50,8 +50,7 @@ export const exchangeResponseCodePresenter: ExchangeResponseCodePresenter<{
     claimer: {
       id_token: claimer.id_token,
       sub: claimer.sub,
-      icon: claimer.icon,
-      organization: claimer.organization,
+      learningCredential: claimer.learningCredential,
     },
   };
 };

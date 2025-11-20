@@ -201,6 +201,24 @@ export const routes = async (appContext: AppContext) => {
       ctx.status = 404;
     }
   });
+  router.get(`/${apiDomain}/credential-data`, koaBody(), async (ctx) => {
+    const requestId = ctx.session?.request_id ?? undefined;
+    if (!requestId) {
+      const { statusCode, body } = missingHeader();
+      ctx.status = statusCode;
+      ctx.body = body;
+      return;
+    }
+    const result = await interactor.getCredentialData(requestId);
+    if (result.ok) {
+      ctx.status = 200;
+      ctx.body = result.payload;
+    } else {
+      const { statusCode, body } = handleError(result.error);
+      ctx.status = statusCode;
+      ctx.body = body;
+    }
+  });
   return router;
 };
 

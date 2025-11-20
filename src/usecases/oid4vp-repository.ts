@@ -259,10 +259,37 @@ export const initSessionRepository = (db: Database) => {
     return { ok: true, payload: session as T };
   };
 
+  const getSessionByRequestId = async <T extends EntityWithLifeCycle>(
+    requestId: string
+  ): Promise<Result<T, { type: "NOT_FOUND" | "EXPIRED" }>> => {
+    const row = await db.get<any>(
+      "SELECT * FROM sessions WHERE request_id = ?",
+      [requestId]
+    );
+
+    if (!row) {
+      return { ok: false, error: { type: "NOT_FOUND" } };
+    }
+
+    const session: any = {
+      id: row.id,
+      data: row.credential_data ? JSON.parse(row.credential_data) : { requestId: row.request_id },
+      issuedAt: row.created_at,
+      expiredIn: row.expires_at - row.created_at,
+    };
+
+    if (isExpired(session.issuedAt, session.expiredIn)) {
+      return { ok: false, error: { type: "EXPIRED" } };
+    }
+
+    return { ok: true, payload: session as T };
+  };
+
   return {
     putRequestId,
     putWaitCommitData,
     getSession,
+    getSessionByRequestId,
   };
 };
 

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learning Credential Request</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h3 class="mb-0">Learning Credential Request</h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">Select the claims you want to request from the wallet.</p>
+
+                        <form action="/submit-request" method="POST">
+                            <!-- Required Claims -->
+                            <h5 class="mt-4 mb-3">Required Claims</h5>
+                            <div class="list-group mb-4">
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="claims" value="issuing_authority" checked disabled>
+                                    <div>
+                                        <div class="fw-bold">Issuing Authority</div>
+                                        <small class="text-muted">発行機関名</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="claims" value="issuing_country" checked disabled>
+                                    <div>
+                                        <div class="fw-bold">Issuing Country</div>
+                                        <small class="text-muted">発行国 (ISO 3166-1 Alpha-2)</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="claims" value="date_of_issuance" checked disabled>
+                                    <div>
+                                        <div class="fw-bold">Date of Issuance</div>
+                                        <small class="text-muted">発行日 (YYYY-MM-DD)</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="claims" value="achievement_title" checked disabled>
+                                    <div>
+                                        <div class="fw-bold">Achievement Title</div>
+                                        <small class="text-muted">コース/マイクロクレデンシャルの公式タイトル</small>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- Optional Claims -->
+                            <h5 class="mb-3">Optional Claims</h5>
+                            <div class="list-group mb-4">
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="optional_claims" value="family_name" checked>
+                                    <div>
+                                        <div class="fw-bold">Family Name</div>
+                                        <small class="text-muted">姓</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="optional_claims" value="given_name" checked>
+                                    <div>
+                                        <div class="fw-bold">Given Name</div>
+                                        <small class="text-muted">名</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="optional_claims" value="achievement_description">
+                                    <div>
+                                        <div class="fw-bold">Achievement Description</div>
+                                        <small class="text-muted">達成の説明</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="optional_claims" value="learning_outcomes">
+                                    <div>
+                                        <div class="fw-bold">Learning Outcomes</div>
+                                        <small class="text-muted">学習成果の説明</small>
+                                    </div>
+                                </label>
+                                <label class="list-group-item d-flex align-items-center">
+                                    <input class="form-check-input me-3" type="checkbox" name="optional_claims" value="assessment_grade">
+                                    <div>
+                                        <div class="fw-bold">Assessment Grade</div>
+                                        <small class="text-muted">評価/成績</small>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg">Next</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

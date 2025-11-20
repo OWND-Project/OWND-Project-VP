@@ -13,6 +13,7 @@ import {
   AuthResponsePresenter,
   ExchangeResponseCodePresenter,
   PostStatePresenter,
+  WaitCommitData,
 } from "./types.js";
 import {
   PostStateRepository,
@@ -129,7 +130,6 @@ export const initOID4VPInteractor = (
         const opts: GenerateRequestObjectOptions = {
           responseType,
           responseMode: "direct_post",
-          clientIdScheme,
           responseUri,
           clientMetadata: getClientMetadata(),
           dcqlQuery, // Use DCQL instead of Presentation Definition
@@ -182,7 +182,6 @@ export const initOID4VPInteractor = (
     const opts: GenerateRequestObjectOptions = {
       responseType,
       responseMode: "direct_post",
-      clientIdScheme,
       responseUri: responseUri,
       clientMetadata: getClientMetadata(),
       dcqlQuery, // Use DCQL instead of Presentation Definition
@@ -357,6 +356,32 @@ export const initOID4VPInteractor = (
     return presenter(state);
   };
 
+  /**
+   * Get credential data from session by request ID
+   * @param requestId
+   */
+  const getCredentialData = async (
+    requestId: string,
+  ): Promise<Result<any, NotSuccessResult>> => {
+    const sessionResult = await sessionRepository.getSessionByRequestId<WaitCommitData>(requestId);
+
+    if (!sessionResult.ok) {
+      if (sessionResult.error.type === "NOT_FOUND") {
+        return { ok: false, error: { type: "NOT_FOUND" } };
+      }
+      if (sessionResult.error.type === "EXPIRED") {
+        return { ok: false, error: { type: "EXPIRED" } };
+      }
+      return { ok: false, error: { type: "UNEXPECTED_ERROR" } };
+    }
+
+    const session = sessionResult.payload;
+    return {
+      ok: true,
+      payload: session.data,
+    };
+  };
+
   return {
     generateAuthRequest,
     getRequestObject,
@@ -364,6 +389,7 @@ export const initOID4VPInteractor = (
     receiveAuthResponse,
     exchangeAuthResponse,
     getStates,
+    getCredentialData,
   };
 };
 
