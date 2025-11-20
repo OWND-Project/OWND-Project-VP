@@ -13,7 +13,6 @@ export interface DatabaseStats {
 export interface RequestRecord {
   id: string;
   nonce: string | null;
-  session: string | null;
   transaction_id: string | null;
   response_type: string;
   redirect_uri_returned_by_response_uri: string | null;
@@ -95,7 +94,7 @@ export class AdminInteractor {
   async getAllRequests(): Promise<RequestRecord[]> {
     try {
       const requests = await this.db.all<RequestRecord[]>(
-        `SELECT id, nonce, session, transaction_id, response_type,
+        `SELECT id, nonce, transaction_id, response_type,
                 redirect_uri_returned_by_response_uri, created_at, expires_at,
                 consumed_at, encryption_private_jwk, dcql_query
          FROM requests
