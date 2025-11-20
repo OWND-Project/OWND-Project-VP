@@ -21,6 +21,7 @@ export interface RequestRecord {
   consumed_at: number | null;
   encryption_private_jwk: string | null;
   dcql_query: string | null;
+  dcql_query_parsed?: any; // Parsed DCQL query for display
 }
 
 export interface PostStateRecord {
@@ -101,7 +102,20 @@ export class AdminInteractor {
          ORDER BY created_at DESC`
       );
 
-      return requests || [];
+      // Parse DCQL query for display
+      const parsedRequests = (requests || []).map(req => {
+        if (req.dcql_query) {
+          try {
+            req.dcql_query_parsed = JSON.parse(req.dcql_query);
+          } catch (e) {
+            logger.warn(`Failed to parse DCQL query for request ${req.id}: ${e}`);
+            req.dcql_query_parsed = null;
+          }
+        }
+        return req;
+      });
+
+      return parsedRequests;
     } catch (error) {
       logger.error(`Failed to get requests: ${error}`);
       throw error;
