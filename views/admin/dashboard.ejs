@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - OID4VP Verifier</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <style>
+        .badge-state-started { background-color: #0dcaf0; }
+        .badge-state-committed { background-color: #198754; }
+        .badge-state-expired { background-color: #dc3545; }
+        .badge-state-invalid_submission { background-color: #fd7e14; }
+        .uuid-short { font-family: monospace; font-size: 0.9em; }
+        .json-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">OID4VP Verifier - Admin Dashboard</span>
+            <span class="navbar-text text-white-50">
+                Development Debug Interface
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Database Stats -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Database Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Requests</h6>
+                                        <h3 class="text-primary"><%= stats.requests %></h3>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Post States</h6>
+                                        <h3 class="text-info"><%= stats.postStates %></h3>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Sessions</h6>
+                                        <h3 class="text-success"><%= stats.sessions %></h3>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Response Codes</h6>
+                                        <h3 class="text-warning"><%= stats.responseCodes %></h3>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-12">
+                                <button class="btn btn-danger" onclick="clearAllData()">Clear All Data</button>
+                                <button class="btn btn-warning" onclick="deleteExpiredRecords()">Delete Expired Records</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Requests Table -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Requests</h5>
+                    </div>
+                    <div class="card-body">
+                        <table id="requestsTable" class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nonce</th>
+                                    <th>Response Type</th>
+                                    <th>Transaction ID</th>
+                                    <th>Created At</th>
+                                    <th>Expires At</th>
+                                    <th>DCQL Query</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% requests.forEach(function(req) { %>
+                                <tr>
+                                    <td class="uuid-short" title="<%= req.id %>"><%= req.id.substring(0, 8) %>...</td>
+                                    <td class="uuid-short" title="<%= req.nonce %>">
+                                        <%= req.nonce ? req.nonce.substring(0, 8) + '...' : 'N/A' %>
+                                    </td>
+                                    <td><%= req.response_type || 'N/A' %></td>
+                                    <td class="uuid-short" title="<%= req.transaction_id %>">
+                                        <%= req.transaction_id ? req.transaction_id.substring(0, 8) + '...' : 'N/A' %>
+                                    </td>
+                                    <td><%= new Date(req.created_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td><%= new Date(req.expires_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td class="json-cell" title="<%= req.dcql_query %>">
+                                        <%= req.dcql_query ? req.dcql_query.substring(0, 50) + '...' : 'N/A' %>
+                                    </td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Post States Table -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Post States</h5>
+                    </div>
+                    <div class="card-body">
+                        <table id="statesTable" class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>State</th>
+                                    <th>Target ID</th>
+                                    <th>Created At</th>
+                                    <th>Expires At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% postStates.forEach(function(state) { %>
+                                <tr>
+                                    <td class="uuid-short" title="<%= state.id %>"><%= state.id.substring(0, 8) %>...</td>
+                                    <td>
+                                        <span class="badge badge-state-<%= state.value %>"><%= state.value %></span>
+                                    </td>
+                                    <td class="uuid-short" title="<%= state.target_id %>">
+                                        <%= state.target_id ? state.target_id.substring(0, 8) + '...' : 'N/A' %>
+                                    </td>
+                                    <td><%= new Date(state.created_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td><%= new Date(state.expires_at * 1000).toLocaleString('ja-JP') %></td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sessions Table -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Sessions</h5>
+                    </div>
+                    <div class="card-body">
+                        <table id="sessionsTable" class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Request ID</th>
+                                    <th>State</th>
+                                    <th>Credential Data</th>
+                                    <th>Created At</th>
+                                    <th>Expires At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% sessions.forEach(function(session) { %>
+                                <tr>
+                                    <td class="uuid-short" title="<%= session.id %>"><%= session.id.substring(0, 8) %>...</td>
+                                    <td class="uuid-short" title="<%= session.request_id %>"><%= session.request_id.substring(0, 8) %>...</td>
+                                    <td>
+                                        <span class="badge badge-state-<%= session.state %>"><%= session.state %></span>
+                                    </td>
+                                    <td class="json-cell" title="<%= session.credential_data %>">
+                                        <%= session.credential_data ? session.credential_data.substring(0, 50) + '...' : 'N/A' %>
+                                    </td>
+                                    <td><%= new Date(session.created_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td><%= new Date(session.expires_at * 1000).toLocaleString('ja-JP') %></td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Codes Table -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Response Codes</h5>
+                    </div>
+                    <div class="card-body">
+                        <table id="responseCodesTable" class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Request ID</th>
+                                    <th>Payload</th>
+                                    <th>Created At</th>
+                                    <th>Expires At</th>
+                                    <th>Used</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% responseCodes.forEach(function(code) { %>
+                                <tr>
+                                    <td class="uuid-short" title="<%= code.code %>"><%= code.code.substring(0, 8) %>...</td>
+                                    <td class="uuid-short" title="<%= code.request_id %>"><%= code.request_id.substring(0, 8) %>...</td>
+                                    <td class="json-cell" title="<%= code.payload %>">
+                                        <%= code.payload ? code.payload.substring(0, 50) + '...' : 'N/A' %>
+                                    </td>
+                                    <td><%= new Date(code.created_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td><%= new Date(code.expires_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td><%= code.used ? '✓' : '' %></td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize DataTables
+            $('#requestsTable').DataTable({
+                order: [[4, 'desc']], // Sort by created_at descending
+                pageLength: 20,
+                scrollX: true,
+                autoWidth: false
+            });
+            $('#statesTable').DataTable({
+                order: [[3, 'desc']], // Sort by created_at descending
+                pageLength: 20
+            });
+            $('#sessionsTable').DataTable({
+                order: [[4, 'desc']], // Sort by created_at descending
+                pageLength: 20
+            });
+            $('#responseCodesTable').DataTable({
+                order: [[3, 'desc']],
+                pageLength: 20
+            });
+        });
+
+        function deleteExpiredRecords() {
+            if (!confirm('Are you sure you want to delete all expired records?')) {
+                return;
+            }
+
+            fetch('/admin/delete-expired', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Deleted: ${JSON.stringify(data.deleted, null, 2)}`);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        }
+
+        function clearAllData() {
+            if (!confirm('WARNING: This will delete ALL data from ALL tables. Are you sure?')) {
+                return;
+            }
+
+            if (!confirm('This action cannot be undone. Please confirm again.')) {
+                return;
+            }
+
+            fetch('/admin/clear-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Cleared: ${JSON.stringify(data.deleted, null, 2)}`);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        }
+    </script>
+</body>
+</html>

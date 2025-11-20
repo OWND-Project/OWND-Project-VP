@@ -10,6 +10,7 @@ import getLogger, { errorLogger } from "./services/logging-service.js";
 import { toErrorBody } from "./routes/error-handler.js";
 import oid4vpRoutes from "./routes/oid4vp-routes.js";
 import uiRoutes from "./routes/ui-routes.js";
+import adminRoutes from "./routes/admin-routes.js";
 import routesLogger from "./middlewares/routes-logger.js";
 import { AppContext } from "./types/app-types.js";
 import { initClient } from "./database/sqlite-client.js";
@@ -103,6 +104,10 @@ export const init = async () => {
   const appContext: AppContext = {
     db: sqliteClient.db,
   };
+
+  // Admin routes
+  const adminRouter = await adminRoutes.routes(appContext);
+  app.use(adminRouter.routes()).use(adminRouter.allowedMethods());
 
   // UI routes
   const uiRouter = await uiRoutes.routes(appContext);
