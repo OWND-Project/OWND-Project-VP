@@ -29,6 +29,13 @@
                             </a>
                         </div>
 
+                        <!-- View Request Object Button -->
+                        <div class="mb-4">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#requestObjectModal">
+                                View Request Object
+                            </button>
+                        </div>
+
                         <!-- Status -->
                         <div id="status-container">
                             <div class="spinner-border text-primary" role="status">
@@ -42,7 +49,88 @@
         </div>
     </div>
 
+    <!-- Request Object Modal -->
+    <div class="modal fade" id="requestObjectModal" tabindex="-1" aria-labelledby="requestObjectModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="requestObjectModalLabel">Request Object (JWT)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="requestObjectContent">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading Request Object...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Extract request_uri from authRequestUrl
+        // Use raw output to prevent HTML encoding of & characters
+        const authRequestUrl = '<%- authRequestUrl %>';
+        // Handle custom scheme (oid4vp://) by extracting query string
+        const queryString = authRequestUrl.includes('?') ? authRequestUrl.split('?')[1] : '';
+        const urlParams = new URLSearchParams(queryString);
+        const requestUri = urlParams.get('request_uri');
+
+        console.log('Auth Request URL:', authRequestUrl);
+        console.log('Query String:', queryString);
+        console.log('Request URI:', requestUri);
+
+        // Load Request Object when modal is shown
+        const requestObjectModal = document.getElementById('requestObjectModal');
+        requestObjectModal.addEventListener('show.bs.modal', async function () {
+            const contentDiv = document.getElementById('requestObjectContent');
+
+            if (!requestUri) {
+                contentDiv.innerHTML = '<div class="alert alert-warning">No request_uri found</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(decodeURIComponent(requestUri));
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const jwt = await response.text();
+
+                // Decode JWT
+                const parts = jwt.split('.');
+                const header = JSON.parse(atob(parts[0]));
+                const payload = JSON.parse(atob(parts[1]));
+
+                // Display formatted JWT
+                contentDiv.innerHTML = `
+                    <div class="mb-3">
+                        <h6>JWT Header</h6>
+                        <pre class="bg-light p-3 border rounded" style="max-height: 200px; overflow-y: auto;"><code>${JSON.stringify(header, null, 2)}</code></pre>
+                    </div>
+                    <div class="mb-3">
+                        <h6>JWT Payload</h6>
+                        <pre class="bg-light p-3 border rounded" style="max-height: 400px; overflow-y: auto;"><code>${JSON.stringify(payload, null, 2)}</code></pre>
+                    </div>
+                    <div class="mb-3">
+                        <h6>Raw JWT</h6>
+                        <textarea class="form-control font-monospace" rows="3" readonly style="font-size: 0.8rem;">${jwt}</textarea>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading Request Object:', error);
+                contentDiv.innerHTML = `<div class="alert alert-danger">Error loading Request Object: ${error.message}</div>`;
+            }
+        });
+    </script>
     <script src="/js/polling.js"></script>
 </body>
 </html>

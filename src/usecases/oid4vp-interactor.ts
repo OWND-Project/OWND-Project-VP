@@ -50,7 +50,7 @@ export const initOID4VPInteractor = (
     return {
       clientId: process.env.OID4VP_CLIENT_ID || "",
       clientIdScheme: (process.env.OID4VP_CLIENT_ID_SCHEME ||
-        "redirect_uri") as "redirect_uri" | "x509_san_dns",
+        "redirect_uri") as "redirect_uri" | "x509_san_dns" | "x509_hash",
       verifier: {
         jwk: process.env.OID4VP_VERIFIER_JWK || "VERIFIER_JWK_IS_NOT_SET",
         x5c: certificateStr2Array(
@@ -65,6 +65,7 @@ export const initOID4VPInteractor = (
       redirectUriReturnedByResponseUri:
         process.env.OID4VP_REDIRECT_URI_RETURNED_BY_RESPONSE_URI || "",
       apiHost: process.env.API_HOST || "http://localhost:3000",
+      enableEncryption: process.env.OID4VP_VP_TOKEN_ENCRYPTION_ENABLED === "true",
       expiredIn: {
         requestAtVerifier: Number(
           process.env.OID4VP_REQUEST_EXPIRED_IN_AT_VERIFIER || "600",
@@ -84,23 +85,27 @@ export const initOID4VPInteractor = (
   /**
    * Generate OID4VP authorization request
    * @param presenter
+   * @param dcqlCredentialQueries - Optional DCQL credential queries. If not provided, all Learning Credential claims will be requested.
    */
   const generateAuthRequest = async <T>(
     presenter: AuthRequestPresenter<T>,
+    dcqlCredentialQueries?: any[],
   ): Promise<Result<T, NotSuccessResult>> => {
     logger.info("generateAuthRequest start");
 
-    const responseType = "vp_token id_token";
+    const responseType = "vp_token";
     // initiate transaction
     const request = await responseEndpoint.initiateTransaction({
       responseType,
       redirectUriReturnedByResponseUri:
         Env().redirectUriReturnedByResponseUri,
       expiredIn: Env().expiredIn.requestAtResponseEndpoint,
+      enableEncryption: Env().enableEncryption,
     });
 
     // Generate DCQL query for learning credential
-    const dcqlQuery = verifier.generateDcqlQuery([
+    // Use provided queries or default to all claims
+    const defaultQueries = [
       {
         id: "learning_credential",
         format: "dc+sd-jwt",
@@ -119,17 +124,19 @@ export const initOID4VPInteractor = (
           { path: ["assessment_grade"] },
         ],
       },
-    ]);
+    ];
+    const dcqlQuery = verifier.generateDcqlQuery(dcqlCredentialQueries || defaultQueries);
 
     const clientIdScheme = Env().clientIdScheme;
     const f = async () => {
-      if (clientIdScheme === "x509_san_dns") {
+      if (clientIdScheme === "x509_san_dns" || clientIdScheme === "x509_hash") {
+        // For x509-based schemes, use request_uri to reference a signed Request Object
         const requestUri = `${Env().requestUri}?id=${request.id}`;
         return { clientId, requestUri };
       } else {
         const opts: GenerateRequestObjectOptions = {
           responseType,
-          responseMode: "direct_post",
+          responseMode: "direct_post.jwt",
           responseUri,
           clientMetadata: getClientMetadata(),
           dcqlQuery, // Use DCQL instead of Presentation Definition
@@ -145,6 +152,19 @@ export const initOID4VPInteractor = (
     };
     const vpRequest = await f();
 
+    // Save DCQL query to requests table for later retrieval in getRequestObject()
+    // This ensures the same claims selected in UI are used when generating the JWT
+    await responseEndpoint.saveRequest({
+      ...request,
+      dcqlQuery: JSON.stringify(dcqlCredentialQueries || defaultQueries),
+    });
+
+    // Initialize post_state to "started" when Authorization Request is created
+    // This allows /oid4vp/states endpoint to return a valid status before Wallet responds
+    await stateRepository.putState(request.id, "started", {
+      expiredIn: Env().expiredIn.postSession,
+    });
+
     logger.info("generateAuthRequest end");
     return {
       ok: true,
@@ -153,7 +173,8 @@ export const initOID4VPInteractor = (
   };
 
   /**
-   * @deprecated PEX-related method. DCQL flow doesn't use Presentation Definition endpoint.
+   * Get Request Object JWT for x509-based schemes
+   * Used by GET /oid4vp/request endpoint when using request_uri
    */
   const getRequestObject = async (
     requestId: string,
@@ -165,23 +186,49 @@ export const initOID4VPInteractor = (
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
     }
 
-    const responseType = "vp_token id_token";
+    const responseType = "vp_token";
     const clientIdScheme = Env().clientIdScheme;
 
-    // Generate DCQL query instead of using Presentation Definition
-    const dcqlQuery = verifier.generateDcqlQuery([
-      {
-        id: "affiliation_credential",
-        format: "dc+sd-jwt",
-        meta: {
-          vct_values: ["OrganizationalAffiliationCertificate"],
+    // Retrieve DCQL query from saved request data
+    // If not found, use default query with all claims
+    let dcqlCredentialQueries: any[];
+    if (request.dcqlQuery) {
+      try {
+        dcqlCredentialQueries = JSON.parse(request.dcqlQuery);
+      } catch (e) {
+        logger.error(`Failed to parse dcqlQuery: ${e}`);
+        dcqlCredentialQueries = [];
+      }
+    } else {
+      // Fallback to default query with all claims
+      dcqlCredentialQueries = [
+        {
+          id: "learning_credential",
+          format: "dc+sd-jwt",
+          meta: {
+            vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"],
+          },
+          claims: [
+            { path: ["issuing_authority"] },
+            { path: ["issuing_country"] },
+            { path: ["date_of_issuance"] },
+            { path: ["family_name"] },
+            { path: ["given_name"] },
+            { path: ["achievement_title"] },
+            { path: ["achievement_description"] },
+            { path: ["learning_outcomes"] },
+            { path: ["assessment_grade"] },
+          ],
         },
-      },
-    ]);
+      ];
+    }
+
+    // Generate DCQL query for Learning Credential
+    const dcqlQuery = verifier.generateDcqlQuery(dcqlCredentialQueries);
 
     const opts: GenerateRequestObjectOptions = {
       responseType,
-      responseMode: "direct_post",
+      responseMode: "direct_post.jwt",
       responseUri: responseUri,
       clientMetadata: getClientMetadata(),
       dcqlQuery, // Use DCQL instead of Presentation Definition

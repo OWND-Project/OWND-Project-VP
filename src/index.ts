@@ -1,7 +1,21 @@
 import * as dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { init } from "./api.js";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load .env from project root (parent of src)
+const envPath = join(__dirname, "..", ".env");
+console.log("Loading .env from:", envPath);
+const dotenvResult = dotenv.config({ path: envPath });
+if (dotenvResult.error) {
+  console.error("Error loading .env:", dotenvResult.error);
+} else {
+  console.log(".env loaded successfully");
+  console.log("NODE_ENV from .env:", process.env.NODE_ENV);
+}
 
 const port = process.env.OID4VP_PORT || 3000;
 const cwd = process.cwd();

@@ -32,13 +32,16 @@ CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 export const DDL_REQUESTS = `
 CREATE TABLE IF NOT EXISTS requests (
   id TEXT PRIMARY KEY,
-  presentation_definition TEXT NOT NULL,
-  nonce TEXT NOT NULL,
-  client_id TEXT NOT NULL,
-  response_uri TEXT NOT NULL,
+  nonce TEXT,
+  session TEXT,
+  transaction_id TEXT,
+  response_type TEXT,
+  redirect_uri_returned_by_response_uri TEXT,
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
-  encryption_private_jwk TEXT
+  consumed_at INTEGER,
+  encryption_private_jwk TEXT,
+  dcql_query TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_expires_at ON requests(expires_at);
@@ -52,7 +55,7 @@ export const DDL_RESPONSE_CODES = `
 CREATE TABLE IF NOT EXISTS response_codes (
   code TEXT PRIMARY KEY,
   request_id TEXT NOT NULL,
-  vp_token TEXT NOT NULL,
+  payload TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   used INTEGER DEFAULT 0,

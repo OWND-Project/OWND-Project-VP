@@ -17,35 +17,37 @@ import { initClient } from "./database/sqlite-client.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// https://github.com/koajs/session
-const CONFIG: Partial<opts> = {
-  key: "koa.sess" /** (string) cookie key (default is koa.sess) */,
-  /** (number || 'session') maxAge in ms (default is 1 days) */
-  /** 'session' will result in a cookie that expires when session/browser is closed */
-  /** Warning: If a session cookie is stolen, this cookie will never expire */
-  maxAge: 60 * 60 * 1000,
-  autoCommit: true /** (boolean) automatically commit headers (default true) */,
-  overwrite: true /** (boolean) can overwrite or not (default true) */,
-  httpOnly: true /** (boolean) httpOnly or not (default true) */,
-  signed: true /** (boolean) signed or not (default true) */,
-  rolling:
-    false /** (boolean) Force a session identifier cookie to be set on every response. The expiration is reset to the original maxAge, resetting the expiration countdown. (default is false) */,
-  renew:
-    false /** (boolean) renew session when session is nearly expired, so we can always keep user logged in. (default is false)*/,
-  // https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie#none
-  // Respect the implementation of `logging-service.ts` for the environment identifier.
-  secure: !(
-    process.env.NODE_ENV === "local" || process.env.NODE_ENV === "test"
-  ) /** (boolean) secure cookie*/,
-  // https://github.com/koajs/session/issues/174
-  sameSite: "none",
-};
-
 /**
  * OID4VP Verifierアプリケーションの初期化
  */
 export const init = async () => {
   const logger = getLogger();
+
+  // https://github.com/koajs/session
+  // CONFIGを関数内で定義することで、process.envが正しく読み込まれた後に評価される
+  const CONFIG: Partial<opts> = {
+    key: "koa.sess" /** (string) cookie key (default is koa.sess) */,
+    /** (number || 'session') maxAge in ms (default is 1 days) */
+    /** 'session' will result in a cookie that expires when session/browser is closed */
+    /** Warning: If a session cookie is stolen, this cookie will never expire */
+    maxAge: 60 * 60 * 1000,
+    autoCommit: true /** (boolean) automatically commit headers (default true) */,
+    overwrite: true /** (boolean) can overwrite or not (default true) */,
+    httpOnly: true /** (boolean) httpOnly or not (default true) */,
+    signed: true /** (boolean) signed or not (default true) */,
+    rolling:
+      false /** (boolean) Force a session identifier cookie to be set on every response. The expiration is reset to the original maxAge, resetting the expiration countdown. (default is false) */,
+    renew:
+      false /** (boolean) renew session when session is nearly expired, so we can always keep user logged in. (default is false)*/,
+    // https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie#none
+    // Respect the implementation of `logging-service.ts` for the environment identifier.
+    secure: !(
+      process.env.NODE_ENV === "local" || process.env.NODE_ENV === "test"
+    ) /** (boolean) secure cookie*/,
+    // https://github.com/koajs/session/issues/174
+    // sameSite "none" requires secure=true, so use "lax" for local development
+    sameSite: (process.env.NODE_ENV === "local" || process.env.NODE_ENV === "test") ? "lax" : "none",
+  };
 
   // SQLiteクライアントの初期化
   const databaseFilePath =

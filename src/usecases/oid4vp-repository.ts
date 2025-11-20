@@ -37,8 +37,8 @@ export const initResponseEndpointDatastore = (
     saveRequest: async (request: VpRequest) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, encryption_private_jwk)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (id, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, encryption_private_jwk, dcql_query)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.responseType,
@@ -47,6 +47,7 @@ export const initResponseEndpointDatastore = (
           request.issuedAt,
           request.issuedAt + request.expiredIn,
           request.encryptionPrivateJwk || null,
+          request.dcqlQuery || null,
         ]
       );
     },
@@ -66,6 +67,7 @@ export const initResponseEndpointDatastore = (
         expiredIn: row.expires_at - row.created_at,
         encryptionPublicJwk: row.encryption_public_jwk,
         encryptionPrivateJwk: row.encryption_private_jwk,
+        dcqlQuery: row.dcql_query,
       } as VpRequest;
     },
     saveResponse: async (response: AuthResponse) => {

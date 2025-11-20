@@ -47,8 +47,50 @@ export const routes = async (appContext: AppContext) => {
   router.post("/submit-request", koaBody(), async (ctx) => {
     const requestHost = process.env.OID4VP_REQUEST_HOST || "http://localhost:3000";
 
-    // Generate authorization request
-    const result = await interactor.generateAuthRequest(authRequestPresenter);
+    // Get selected claims from form data
+    const formData = ctx.request.body || {};
+    logger.info(`Form data received: ${JSON.stringify(formData)}`);
+
+    const selectedClaims: string[] = [];
+
+    // Required claims (always included)
+    const requiredClaims = [
+      "issuing_authority",
+      "issuing_country",
+      "date_of_issuance",
+      "achievement_title",
+    ];
+
+    // Add required claims
+    selectedClaims.push(...requiredClaims);
+
+    // Add selected optional claims
+    // Form sends optional_claims as an array or single value
+    const optionalClaimsFromForm = formData.optional_claims;
+    if (optionalClaimsFromForm) {
+      if (Array.isArray(optionalClaimsFromForm)) {
+        selectedClaims.push(...optionalClaimsFromForm);
+      } else {
+        selectedClaims.push(optionalClaimsFromForm);
+      }
+    }
+
+    logger.info(`Selected claims: ${JSON.stringify(selectedClaims)}`);
+
+    // Build DCQL credential queries
+    const dcqlCredentialQueries = [
+      {
+        id: "learning_credential",
+        format: "dc+sd-jwt",
+        meta: {
+          vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"],
+        },
+        claims: selectedClaims.map(claim => ({ path: [claim] })),
+      },
+    ];
+
+    // Generate authorization request with selected claims
+    const result = await interactor.generateAuthRequest(authRequestPresenter, dcqlCredentialQueries);
 
     if (result.ok) {
       const { authRequest, requestId, transactionId } = result.payload;

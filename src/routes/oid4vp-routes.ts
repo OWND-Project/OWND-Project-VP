@@ -83,7 +83,6 @@ export const routes = async (appContext: AppContext) => {
   router.get(`/${apiDomain}/request`, koaBody(), async (ctx) => {
     const query = ctx.query;
     const id = query.id;
-    const pdId = query.presentationDefinitionId;
 
     if (!id || typeof id !== "string") {
       ctx.status = 400;
@@ -91,13 +90,9 @@ export const routes = async (appContext: AppContext) => {
       return;
     }
 
-    if (!pdId || typeof pdId !== "string") {
-      ctx.status = 400;
-      ctx.body = toErrorBody("BAD_REQUEST");
-      return;
-    }
-
-    const result = await interactor.getRequestObject(id, pdId);
+    // presentationDefinitionId is deprecated (PEX removed, using DCQL now)
+    // Pass empty string for backward compatibility
+    const result = await interactor.getRequestObject(id, "");
     if (result.ok) {
       ctx.status = 200;
       ctx.body = result.payload;

@@ -131,7 +131,7 @@ export const generateRequestObjectJwt = async (
   options: GenerateRequestObjectOptions = {},
 ): Promise<string> => {
   const alg = getKeyAlgorithm(issuerJwk);
-  const basicHeader: JWTHeaderParameters = { alg: alg, typ: "JWT" };
+  const basicHeader: JWTHeaderParameters = { alg: alg, typ: "oauth-authz-req+jwt" };
   const info = selectX509CertificateInfo(options.x509CertificateInfo || {});
 
   const header = info ? { ...basicHeader, ...info } : basicHeader;

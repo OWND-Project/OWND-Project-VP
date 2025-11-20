@@ -17,6 +17,7 @@ export interface VpRequest {
   expiredIn: number;
   encryptionPublicJwk?: string; // エフェメラル公開鍵（JWK形式、JSON文字列）
   encryptionPrivateJwk?: string; // エフェメラル秘密鍵（JWK形式、JSON文字列）
+  dcqlQuery?: string; // DCQL credential queries (JSON文字列)
 }
 
 export interface AuthResponsePayload {
@@ -328,6 +329,7 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
   return {
     initiateTransaction,
     getRequest,
+    saveRequest: datastore.saveRequest,
     receiveAuthResponse,
     exchangeResponseCodeForAuthResponse,
   };

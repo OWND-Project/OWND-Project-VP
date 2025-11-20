@@ -280,9 +280,270 @@ CDN経由で読み込み、追加のビルドプロセスを不要にします:
 | `learning_outcomes` | 学習成果の説明 | Never |
 | `assessment_grade` | 評価/成績 | Never |
 
+## 動作確認中に判明した課題と対応
+
+### 課題1: request_uri パラメータが出力されない ✅ 完了
+
+**現状**:
+- 現在の実装では`redirect_uri`スキームを使用しており、Authorization Requestのパラメータが全てURLに直接含まれる
+- `request_uri`を使用する実装になっていない
+
+**原因**:
+- `src/usecases/oid4vp-interactor.ts`の`generateAuthRequest()`メソッドで、`x509_san_dns`のみが`requestUri`を返す実装になっている
+- `x509_hash`スキームの場合の処理が不足
+
+**対応内容**:
+1. ✅ `src/usecases/oid4vp-interactor.ts`の型定義を修正し、`x509_hash`スキームをサポート
+2. ✅ `generateAuthRequest()`メソッドの条件分岐を修正し、`x509_hash`でも`requestUri`を返すように実装
+3. ✅ 開発用のES256自己署名証明書を生成（CN=localhost, SAN=DNS:localhost）
+4. ✅ 証明書のSHA-256ハッシュを計算: `852VpUM5Dtmk0ZhcCUnI1b-YiypE3mjw1pa8YTLYPh8`
+5. ✅ `.env`ファイルを更新:
+   - `OID4VP_CLIENT_ID_SCHEME=x509_hash`
+   - `OID4VP_CLIENT_ID=x509_hash:852VpUM5Dtmk0ZhcCUnI1b-YiypE3mjw1pa8YTLYPh8`
+   - `OID4VP_VERIFIER_X5C=<Base64証明書>`
+6. ✅ `getRequestObject()`メソッドをDCQL対応に更新（Learning Credential用）
+
+**実装箇所**:
+- `src/usecases/oid4vp-interactor.ts` (53行目, 126-130行目, 160-219行目)
+- `.env` (14行目, 20行目, 36行目)
+
+### 課題2: DCQL query が空で出力される ✅ 完了
+
+**現状**:
+- ホーム画面でクレームを選択しているが、`dcql_query`パラメータが空になっている
+- `interactor.generateAuthRequest()`にDCQLクエリが渡されていない
+
+**原因**:
+- `src/routes/ui-routes.ts`の`POST /submit-request`ハンドラーで、フォームから送信されたクレーム選択を処理していない
+- ハードコードされた`authRequestPresenter`を使用しており、選択されたクレームが反映されない
+
+**対応内容**:
+1. ✅ `generateAuthRequest()`メソッドに`dcqlCredentialQueries`オプションパラメータを追加
+2. ✅ `POST /submit-request`ハンドラーでフォームデータから選択されたクレームを抽出
+3. ✅ 必須クレーム（`issuing_authority`, `issuing_country`, `date_of_issuance`, `achievement_title`）を常に含める
+4. ✅ オプションクレームのチェック状態を確認し、選択されたものを追加
+5. ✅ DCQLクエリオブジェクトを動的に生成して`generateAuthRequest()`に渡す
+6. ✅ 選択されたクレームをログ出力で確認可能に
+
+**動作確認**:
+- ログ出力例: `Selected claims: ["issuing_authority","issuing_country","date_of_issuance","achievement_title","family_name","given_name"]`
+- Authorization Requestに正しくDCQLクエリが含まれることを確認
+
+**実装箇所**:
+- `src/usecases/oid4vp-interactor.ts` (89-92行目: パラメータ追加, 106-126行目: デフォルトクエリ)
+- `src/routes/ui-routes.ts` (50-96行目: クレーム選択処理とDCQLクエリ生成)
+
+### 課題3: /oid4vp/states エンドポイントが404を返す
+
+**現状**:
+- ✅ **解決済み**: `GET /oid4vp/states`エンドポイントは既に実装済み（`src/routes/oid4vp-routes.ts` 184-203行目）
+- セッションのcookieがない場合は400エラーを返す（正常動作）
+
+**確認結果**:
+- エンドポイントは正しく動作している
+- ポーリングスクリプト（`public/js/polling.js`）も正しく実装されている
+
+## 実装完了サマリー
+
+### 実施日
+2025-11-20
+
+### 実装した機能
+1. ✅ `x509_hash` Client Identifier Prefixのサポート
+2. ✅ `request_uri`パラメータを使用したJWT-secured Authorization Request
+3. ✅ 動的DCQLクエリ生成（フォームでのクレーム選択に基づく）
+4. ✅ 必須クレームと選択可能クレームの区別
+5. ✅ Learning Credentialのすべてのクレームに対応
+
+### 生成されるAuthorization Requestの例
+```
+oid4vp://authorize?client_id=x509_hash:852VpUM5Dtmk0ZhcCUnI1b-YiypE3mjw1pa8YTLYPh8&request_uri=http://localhost:3000/oid4vp/request?id=<request_id>&pdId=learning_credential
+```
+
+### DCQLクエリの例（family_nameとgiven_nameを選択した場合）
+```json
+{
+  "credentials": [
+    {
+      "id": "learning_credential",
+      "format": "dc+sd-jwt",
+      "meta": {
+        "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
+      },
+      "claims": [
+        { "path": ["issuing_authority"] },
+        { "path": ["issuing_country"] },
+        { "path": ["date_of_issuance"] },
+        { "path": ["achievement_title"] },
+        { "path": ["family_name"] },
+        { "path": ["given_name"] }
+      ]
+    }
+  ]
+}
+```
+
+### 動作確認方法
+1. サーバーを起動: `npm run dev`
+2. ブラウザで`http://localhost:3000`にアクセス
+3. クレームを選択して「Next」をクリック
+4. QRコードまたはリンクが表示される
+5. Authorization URLに`client_id`と`request_uri`が含まれることを確認
+6. `request_uri`にアクセスすると署名付きJWTが返される
+
+### 課題4: Authorization Request表示画面にRequest Object確認UIを追加 ✅ 完了
+
+**要件**:
+- QRコード表示画面にRequest Objectを確認できるUIを追加
+- ボタンをクリックしたらダイアログで表示される仕様
+
+**対応内容**:
+1. ✅ "View Request Object"ボタンを追加
+2. ✅ Bootstrap 5のモーダルダイアログを実装
+3. ✅ モーダル表示時に`request_uri`からJWTを取得
+4. ✅ JWTをデコードしてHeader、Payload、Raw JWTを表示
+5. ✅ EJSテンプレートの`<%- %>`タグでURL HTMLエンコーディング問題を解決
+
+**実装箇所**:
+- `views/auth-request.ejs` (33-75行目: モーダルUI、81-131行目: JavaScript)
+
+**発生した問題と解決**:
+- **問題**: モーダルで"No request_uri found"エラーが表示される
+- **原因**: `<%= authRequestUrl %>`がHTMLエンコーディングで`&`を`&amp;`に変換していた
+- **解決**: `<%- authRequestUrl %>`（rawアウトプット）に変更してHTMLエンコーディングを無効化
+
+## 動作確認中に判明した課題2の対応
+
+### 課題2-1: /oid4vp/states エンドポイントが404を返す ✅ 完了
+
+**現状**:
+- `GET /oid4vp/states`エンドポイントは`src/routes/oid4vp-routes.ts`に実装済み（179-198行目）
+- セッションにrequest_idがある場合にpost_stateを返す
+- しかし、Authorization Request生成直後はDBに`post_state`が未登録のため404を返していた
+
+**原因**:
+- `generateAuthRequest()`でAuthorization Requestを生成した時点で`post_state`が初期化されていなかった
+- Walletがレスポンスを送信するまで`post_state`テーブルにレコードが作成されないため、初期ポーリング時に404エラーが発生
+
+**対応内容**:
+1. ✅ `generateAuthRequest()`でAuthorization Request生成時に`post_state`を`"started"`で初期化
+2. ✅ `stateRepository.putState(request.id, "started", {...})`を追加
+3. ✅ これによりWalletからのレスポンス前でも`GET /oid4vp/states`が`{"value": "started"}`を返せるようになった
+
+**実装箇所**:
+- `src/usecases/oid4vp-interactor.ts` (162-166行目: post_state初期化)
+
+### 課題2-2: client_metadata に暗号化用の公開鍵が無い ✅ 完了
+
+**要件**:
+- VP Token暗号化を環境変数で切り替えできるようにする
+- 暗号化を要求する場合は公開鍵をclient_metadataに含める
+
+**対応内容**:
+1. ✅ 環境変数 `OID4VP_VP_TOKEN_ENCRYPTION_ENABLED` を追加（`true`で有効化）
+2. ✅ `Env()`関数に`enableEncryption`プロパティを追加
+3. ✅ `generateAuthRequest()`で`enableEncryption`をResponse Endpointに渡す
+4. ✅ 暗号化機能は既に実装済み（Response Endpoint側で鍵ペア生成、Verifier側でclient_metadataに含める）
+
+**実装箇所**:
+- `src/usecases/oid4vp-interactor.ts` (68行目: enableEncryption追加, 103行目: initiateTransactionに渡す)
+- `src/oid4vp/response-endpoint.ts` (87行目: enableEncryptionパラメータ、既存実装で鍵生成)
+- `src/oid4vp/verifier.ts` (136-146行目: 既存実装でclient_metadataに含める)
+
+### 課題2-3: response_type は vp_token のみで良い ✅ 完了
+
+**現状**:
+- 現在の実装では`response_type = "vp_token id_token"`を使用
+- SIOPv2のID Token検証は削除済み（Learning Credentialのみを使用）
+
+**対応内容**:
+1. ✅ `src/usecases/oid4vp-interactor.ts`の`generateAuthRequest()`で`responseType`を`"vp_token"`に変更
+2. ✅ `getRequestObject()`でも同様に変更
+3. ✅ ID Token関連コードは既に削除済み（exchangeAuthResponse内でID Token検証は行っていない）
+
+**実装箇所**:
+- `src/usecases/oid4vp-interactor.ts` (96行目, 176行目: responseType変更)
+
+### 課題2-4: dcql_query に画面で選択したクレームが連動していない ✅ 完了
+
+**現状**:
+- UI実装時にクレーム選択機能は実装済み（課題2で対応済み）
+- しかし、実際にテストすると選択したクレームがDCQLクエリに反映されていなかった
+- x509スキームでは`request_uri`を使用するため、`getRequestObject()`が別途呼ばれる
+- この時点で保存されたDCQLクエリを使用する必要があったが、未実装だった
+
+**原因**:
+1. `generateAuthRequest()`で生成されたDCQLクエリがデータベースに保存されていなかった
+2. `getRequestObject()`が`request_id`から情報を取得する際、保存されたDCQLクエリを参照していなかった
+3. `src/routes/ui-routes.ts`のフォーム処理で`optional_claims`の取得ロジックが間違っていた
+   - フォームは`name="optional_claims"`で配列として送信されるが、コードは個別のクレーム名でチェックしていた
+
+**対応内容**:
+1. ✅ データベーススキーマに`dcql_query TEXT`カラムを追加（`src/database/schema.ts`）
+2. ✅ `VpRequest`インターフェースに`dcqlQuery?: string`を追加
+3. ✅ `saveRequest()`でDCQLクエリをJSON文字列として保存
+4. ✅ `getRequest()`で保存されたDCQLクエリを取得
+5. ✅ `generateAuthRequest()`でDCQLクエリをデータベースに保存（155-160行目）
+6. ✅ `getRequestObject()`で保存されたDCQLクエリを取得・パースして使用（192-227行目）
+7. ✅ `src/routes/ui-routes.ts`のフォーム処理ロジックを修正：
+   - `formData.optional_claims`を配列として正しく取得
+   - 配列の場合と単一値の場合の両方に対応
+
+**データベースマイグレーション**:
+```sql
+ALTER TABLE requests ADD COLUMN dcql_query TEXT;
+```
+
+**実装箇所**:
+- `src/database/schema.ts` (44行目: dcql_queryカラム追加)
+- `src/oid4vp/response-endpoint.ts` (20行目: VpRequestインターフェース)
+- `src/usecases/oid4vp-repository.ts` (39-50行目: saveRequest, 70行目: getRequest)
+- `src/usecases/oid4vp-interactor.ts` (155-160行目: DCQL保存, 192-227行目: DCQL取得)
+- `src/routes/ui-routes.ts` (50-78行目: フォーム処理修正)
+
+**検証結果**:
+- オプショナルクレームを選択しない場合: 4つの必須クレームのみがJWTに含まれる
+- オプショナルクレームを選択した場合: 必須クレーム + 選択したクレームがJWTに含まれる
+
+### 課題2-5: JWT の typ ヘッダーが正しくない ✅ 完了
+
+**現状**:
+- Request ObjectのJWT `typ`ヘッダーが`"JWT"`になっていた
+- OID4VP 1.0仕様では`"oauth-authz-req+jwt"`が正しい（RFC 9101参照）
+
+**対応内容**:
+1. ✅ `src/oid4vp/auth-request.ts`の`generateRequestObjectJwt()`を修正
+2. ✅ `typ`ヘッダーを`"JWT"`から`"oauth-authz-req+jwt"`に変更
+
+**実装箇所**:
+- `src/oid4vp/auth-request.ts` (134行目: typ変更)
+
+**参照仕様**:
+- RFC 9101: The OAuth 2.0 Authorization Framework: JWT-Secured Authorization Request (JAR)
+- OID4VP 1.0: Section 6.1 (Request Object)
+
+### 課題2-6: response_mode を direct_post.jwt に変更 ✅ 完了
+
+**現状**:
+- `response_mode`が`"direct_post"`になっていた
+- 暗号化されたレスポンスを要求する場合は`"direct_post.jwt"`を使用する必要がある
+
+**対応内容**:
+1. ✅ `src/usecases/oid4vp-interactor.ts`の`generateAuthRequest()`で`responseMode`を`"direct_post.jwt"`に変更
+2. ✅ `getRequestObject()`でも同様に変更
+
+**実装箇所**:
+- `src/usecases/oid4vp-interactor.ts` (139行目, 231行目: responseMode変更)
+
+**参照仕様**:
+- OID4VP 1.0: Section 6.3 (Response Mode "direct_post.jwt")
+- JWT-Secured Authorization Response Mode for OAuth 2.0 (JARM)
+
 ## 参考
 
 - EUDI Wallet NiScy_JP EU pilot v0.10: Learning Credential Data Model
 - OID4VP 1.0: DCQL (Digital Credentials Query Language)
+- OID4VP 1.0: Client Identifier Prefix (Section 5.9)
+- OID4VP 1.0: Request Object typ header (Section 6.1)
 - Bootstrap 5 Documentation: https://getbootstrap.com/docs/5.3/
 - EJS Documentation: https://ejs.co/
