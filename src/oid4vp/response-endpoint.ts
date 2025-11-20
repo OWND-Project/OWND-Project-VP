@@ -10,6 +10,7 @@ const logger = getLogger();
 
 export interface VpRequest {
   id: string;
+  nonce?: string; // Nonce for replay protection
   responseType: ResponseType;
   redirectUriReturnedByResponseUri?: string;
   transactionId?: string;

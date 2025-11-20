@@ -103,6 +103,11 @@ export const initOID4VPInteractor = (
       enableEncryption: Env().enableEncryption,
     });
 
+    // Generate nonce at request creation time (only once)
+    const { v4: uuidv4 } = await import("uuid");
+    const nonce = uuidv4();
+    logger.info(`Generated nonce for request ${request.id}: ${nonce}`);
+
     // Generate DCQL query for learning credential
     // Use provided queries or default to all claims
     const defaultQueries = [
@@ -142,20 +147,22 @@ export const initOID4VPInteractor = (
           dcqlQuery, // Use DCQL instead of Presentation Definition
         };
 
-        // start vp request
+        // start vp request with pre-generated nonce
         const startRequestOpts: Record<string, any> = {
           requestObject: opts,
           expiredIn: Env().expiredIn.requestAtVerifier,
+          generateId: () => nonce, // Pass pre-generated nonce to prevent regeneration
         };
         return await verifier.startRequest(request, clientId, startRequestOpts);
       }
     };
     const vpRequest = await f();
 
-    // Save DCQL query to requests table for later retrieval in getRequestObject()
-    // This ensures the same claims selected in UI are used when generating the JWT
+    // Save nonce and DCQL query to requests table
+    // This ensures they are persisted and can be retrieved later in getRequestObject()
     await responseEndpoint.saveRequest({
       ...request,
+      nonce,
       dcqlQuery: JSON.stringify(dcqlCredentialQueries || defaultQueries),
     });
 
@@ -175,6 +182,7 @@ export const initOID4VPInteractor = (
   /**
    * Get Request Object JWT for x509-based schemes
    * Used by GET /oid4vp/request endpoint when using request_uri
+   * Uses saved nonce and DCQL query to ensure consistency
    */
   const getRequestObject = async (
     requestId: string,
@@ -183,6 +191,12 @@ export const initOID4VPInteractor = (
     const request = await responseEndpoint.getRequest(requestId);
 
     if (!request) {
+      return { ok: false, error: { type: "INVALID_PARAMETER" } };
+    }
+
+    // Verify that nonce exists (should have been saved during generateAuthRequest)
+    if (!request.nonce) {
+      logger.error(`Request ${requestId} does not have a saved nonce`);
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
     }
 
@@ -226,29 +240,41 @@ export const initOID4VPInteractor = (
     // Generate DCQL query for Learning Credential
     const dcqlQuery = verifier.generateDcqlQuery(dcqlCredentialQueries);
 
+    // Prepare client metadata with encryption support if enabled
+    let clientMetadata = getClientMetadata();
+    if (request.encryptionPublicJwk) {
+      const encryptionPublicJwk = JSON.parse(request.encryptionPublicJwk);
+      clientMetadata = {
+        ...clientMetadata,
+        jwks: {
+          keys: [encryptionPublicJwk],
+        },
+        encryptedResponseEncValuesSupported: ["A128GCM"],
+      };
+    }
+
     const opts: GenerateRequestObjectOptions = {
       responseType,
       responseMode: "direct_post.jwt",
       responseUri: responseUri,
-      clientMetadata: getClientMetadata(),
-      dcqlQuery, // Use DCQL instead of Presentation Definition
+      clientMetadata,
+      dcqlQuery,
+      state: request.id,
+      nonce: request.nonce, // Use saved nonce instead of generating new one
+      x509CertificateInfo: { x5c: Env().verifier.x5c },
     };
 
-    // start vp request
-    const startRequestOpts: Record<string, any> = {
-      requestObject: opts,
-      expiredIn: Env().expiredIn.requestAtVerifier,
-    };
-    startRequestOpts.issuerJwk = JSON.parse(Env().verifier.jwk);
-    startRequestOpts.x5c = Env().verifier.x5c;
-    const vpRequest = await verifier.startRequest(
-      request,
-      clientId,
-      startRequestOpts,
-    );
+    // Generate Request Object JWT directly without calling verifier.startRequest
+    // This prevents nonce regeneration
+    const { generateRequestObjectJwt } = await import("../oid4vp/auth-request.js");
+    const issuerJwk = JSON.parse(Env().verifier.jwk);
+    const requestObjectJwt = await generateRequestObjectJwt(clientId, issuerJwk, opts);
+
+    logger.info(`Generated Request Object JWT for request ${requestId} with saved nonce ${request.nonce}`);
+
     return {
       ok: true,
-      payload: vpRequest.request!,
+      payload: requestObjectJwt,
     };
   };
 

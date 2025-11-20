@@ -37,15 +37,18 @@ export const initResponseEndpointDatastore = (
     saveRequest: async (request: VpRequest) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, encryption_private_jwk, dcql_query)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, nonce, session, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk, dcql_query)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
+          (request as any).nonce || null,
+          (request as any).session || null,
           request.responseType,
           request.redirectUriReturnedByResponseUri || null,
           request.transactionId || null,
           request.issuedAt,
           request.issuedAt + request.expiredIn,
+          (request as any).consumedAt || 0,
           request.encryptionPrivateJwk || null,
           request.dcqlQuery || null,
         ]
@@ -60,6 +63,7 @@ export const initResponseEndpointDatastore = (
 
       return {
         id: row.id,
+        nonce: row.nonce,
         responseType: row.response_type,
         redirectUriReturnedByResponseUri: row.redirect_uri_returned_by_response_uri,
         transactionId: row.transaction_id,
@@ -119,17 +123,20 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
     saveRequest: async (request: VpRequestAtVerifier) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, nonce, session, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, nonce, session, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk, dcql_query)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.nonce,
           request.session || null,
+          (request as any).responseType || null,
+          (request as any).redirectUriReturnedByResponseUri || null,
           request.transactionId || null,
           request.issuedAt,
           request.issuedAt + request.expiredIn,
           request.consumedAt,
           request.encryptionPrivateJwk || null,
+          (request as any).dcqlQuery || null,
         ]
       );
     },
