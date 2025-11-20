@@ -396,10 +396,17 @@ export interface WaitCommitData extends EntityWithLifeCycle {
 **テスト実行結果**:
 ```
 73 passing (248ms)
-1 pending
+0 pending
 ```
 
 全テスト合格。Learning Credentialへの移行が正常に完了。
+
+**クリーンアップ**:
+- `tests/oid4vp/verify.test.ts` 削除
+  - PEX (Presentation Exchange) 関連の廃止されたテストファイル
+  - 全テストが`describe.skip()`でスキップされていた
+  - DCQLベースの`extractCredentialFromVpToken`に置き換え済み
+  - pending状態だったテストを完全に削除
 
 ### 変更ファイル一覧
 
@@ -410,7 +417,8 @@ export interface WaitCommitData extends EntityWithLifeCycle {
 - `src/usecases/oid4vp-repository.ts`
 
 **テストファイル**:
-- `tests/usecases/credential2-processor.test.ts`
+- `tests/usecases/credential2-processor.test.ts` (更新)
+- `tests/oid4vp/verify.test.ts` (削除 - 廃止されたPEXテスト)
 
 **ドキュメント**:
 - `docs/learning-credential-migration.md` (本ファイル)
@@ -447,8 +455,14 @@ export interface WaitCommitData extends EntityWithLifeCycle {
 - [x] Phase 3: テスト更新
 - [x] Phase 4: ドキュメント更新
 - [x] Phase 5: 統合テスト
+- [x] クリーンアップ: 廃止されたPEXテストファイル削除
 
-**最終テスト結果**: 73 passing (250ms), 1 pending ✅
+**最終テスト結果**: 73 passing (248ms), 0 pending ✅
+
+**コミット履歴**:
+- `ccc4b4d`: コアロジック + テスト更新
+- `932a34b`: 全ドキュメント更新
+- `2bce1db`: 廃止されたPEXテストファイル削除
 
 ### 備考
 
