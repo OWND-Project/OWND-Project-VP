@@ -148,7 +148,7 @@ const generateAuthRequest = async (presenter) => {
   const dcqlQuery = verifier.generateDcqlQuery([
     {
       id: "learning_credential",
-      format: "vc+sd-jwt",
+      format: "dc+sd-jwt",
       meta: {
         vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"],
       },
@@ -218,7 +218,7 @@ const generateAuthRequest = async (presenter) => {
      "credentials": [
        {
          "id": "learning_credential",
-         "format": "vc+sd-jwt",
+         "format": "dc+sd-jwt",
          "meta": {
            "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
          },
@@ -304,7 +304,7 @@ const getRequestObject = async (requestId) => {
     "credentials": [
       {
         "id": "affiliation_credential",
-        "format": "vc+sd-jwt",
+        "format": "dc+sd-jwt",
         "meta": {
           "vct_values": ["https://example.com/AffiliationCredential"]
         },
@@ -316,7 +316,7 @@ const getRequestObject = async (requestId) => {
     ]
   },
   "client_metadata": {
-    "vp_formats": { "vc+sd-jwt": {} },
+    "vp_formats": { "dc+sd-jwt": {} },
     "client_name": "boolcheck.com",
     "logo_uri": "http://localhost/logo.png",
     "client_purpose": "真偽コメントに署名します"
@@ -885,7 +885,7 @@ const initiateTransaction = async (options) => {
       ]
     },
     "encrypted_response_enc_values_supported": ["A128GCM"],
-    "vp_formats": { "vc+sd-jwt": {} },
+    "vp_formats": { "dc+sd-jwt": {} },
     "client_name": "boolcheck.com",
     "logo_uri": "http://localhost/logo.png"
   },

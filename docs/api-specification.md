@@ -105,7 +105,7 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
     "credentials": [
       {
         "id": "learning_credential",
-        "format": "vc+sd-jwt",
+        "format": "dc+sd-jwt",
         "meta": {
           "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
         },
@@ -180,7 +180,7 @@ GET /oid4vp/request?id=req_abc123 HTTP/1.1
     "credentials": [
       {
         "id": "learning_credential",
-        "format": "vc+sd-jwt",
+        "format": "dc+sd-jwt",
         "meta": {
           "vct_values": ["urn:eu.europa.ec.eudi:learning:credential:1"]
         },

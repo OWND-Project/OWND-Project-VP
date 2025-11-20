@@ -261,7 +261,7 @@ const request = await responseEndpoint.initiateTransaction({
 const dcqlQuery = verifier.generateDcqlQuery([
   {
     id: "learning_credential",
-    format: "vc+sd-jwt",
+    format: "dc+sd-jwt",
     meta: {
       vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"]
     },
