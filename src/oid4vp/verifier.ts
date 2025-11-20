@@ -28,7 +28,6 @@ import { getCurrentUnixTimeInSeconds, isExpired } from "../utils/data-util.js";
 export interface VpRequestAtVerifier {
   id: string;
   nonce: string;
-  session?: string;
   transactionId?: string;
   issuedAt: number;
   expiredIn: number;

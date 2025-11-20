@@ -28,12 +28,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 /**
  * requestsテーブル
  * OID4VP認証リクエスト管理
+ *
+ * Note: sessionカラムは削除されました (2025-11-20)
+ * セッション管理はsessionsテーブルのrequest_idカラムで実現されます
  */
 export const DDL_REQUESTS = `
 CREATE TABLE IF NOT EXISTS requests (
   id TEXT PRIMARY KEY,
   nonce TEXT,
-  session TEXT,
   transaction_id TEXT,
   response_type TEXT,
   redirect_uri_returned_by_response_uri TEXT,

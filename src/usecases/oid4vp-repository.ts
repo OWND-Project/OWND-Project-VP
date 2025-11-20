@@ -37,12 +37,11 @@ export const initResponseEndpointDatastore = (
     saveRequest: async (request: VpRequest) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, nonce, session, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk, dcql_query)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, nonce, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk, dcql_query)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           (request as any).nonce || null,
-          (request as any).session || null,
           request.responseType,
           request.redirectUriReturnedByResponseUri || null,
           request.transactionId || null,
@@ -123,12 +122,11 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
     saveRequest: async (request: VpRequestAtVerifier) => {
       await db.run(
         `INSERT OR REPLACE INTO requests
-         (id, nonce, session, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk, dcql_query)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, nonce, response_type, redirect_uri_returned_by_response_uri, transaction_id, created_at, expires_at, consumed_at, encryption_private_jwk, dcql_query)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.nonce,
-          request.session || null,
           (request as any).responseType || null,
           (request as any).redirectUriReturnedByResponseUri || null,
           request.transactionId || null,
@@ -150,7 +148,6 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
       return {
         id: row.id,
         nonce: row.nonce,
-        session: row.session,
         transactionId: row.transaction_id,
         issuedAt: row.created_at,
         expiredIn: row.expires_at - row.created_at,

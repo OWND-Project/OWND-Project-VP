@@ -143,3 +143,6 @@ docs/work.md
 
 *.doc
 *.docx
+oid4vp.sqlite
+oid4vp.sqlite-shm
+oid4vp.sqlite-wal
