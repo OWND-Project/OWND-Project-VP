@@ -88,7 +88,7 @@
         // Extract request_uri from authRequestUrl
         // Use raw output to prevent HTML encoding of & characters
         const authRequestUrl = '<%- authRequestUrl %>';
-        // Handle custom scheme (oid4vp://) by extracting query string
+        // Handle custom scheme (haip-vp:// or oid4vp://) by extracting query string
         const queryString = authRequestUrl.includes('?') ? authRequestUrl.split('?')[1] : '';
         const urlParams = new URLSearchParams(queryString);
         const requestUri = urlParams.get('request_uri');
