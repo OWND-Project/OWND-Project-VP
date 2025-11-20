@@ -361,57 +361,42 @@ SQLiteブラウザツールを使用する選択肢：
 - ✅ 全データクリア (`/admin/clear-all`)
 - ✅ 確認ダイアログ（クライアントサイド）
 
-### ⚠️ 発見された問題
+### ✅ 解決された問題 (2025-11-20)
 
-#### 重大な設計問題: リポジトリ層のデータ保存不整合
+#### ~~重大な設計問題: リポジトリ層のデータ保存不整合~~ → **解決済み**
 
-`src/usecases/oid4vp-repository.ts`に2つの異なる`saveRequest`メソッドが存在し、保存されるフィールドが異なることが判明：
+**発見された問題**:
+`src/usecases/oid4vp-repository.ts`に2つの異なる`saveRequest`メソッドが存在し、保存されるフィールドが異なっていた：
 
-**1. ResponseEndpointDatastore.saveRequest (37-52行目)**
-```typescript
-INSERT OR REPLACE INTO requests
-(id, response_type, redirect_uri_returned_by_response_uri, transaction_id,
- created_at, expires_at, encryption_private_jwk, dcql_query)
-```
-- ✅ 保存: response_type, dcql_query, transaction_id
-- ❌ **未保存: nonce**
+**1. ResponseEndpointDatastore.saveRequest**
+- 保存: response_type, dcql_query, transaction_id
+- **未保存: nonce**
 
-**2. VerifierDatastore.saveRequest (119-134行目)**
-```typescript
-INSERT OR REPLACE INTO requests
-(id, nonce, session, transaction_id, created_at, expires_at,
- consumed_at, encryption_private_jwk)
-```
-- ✅ 保存: nonce, session, consumed_at
-- ❌ **未保存: response_type, dcql_query**
+**2. VerifierDatastore.saveRequest**
+- 保存: nonce, session, consumed_at
+- **未保存: response_type, dcql_query**
 
-**影響**:
-- リクエストの種類によって保存されるフィールドが異なる
-- 管理画面で一部のフィールドがN/Aと表示される
-- データベーススキーマは正しいが、アプリケーション層でデータが不完全
+**解決方法**:
+Nonce lifecycle問題の修正と併せて、データストアの統合を実施：
 
-**根本原因**:
-- 2つのデータストア（ResponseEndpoint用とVerifier用）が同じテーブルに書き込んでいる
-- それぞれが異なるフィールドセットを想定している
-- `INSERT OR REPLACE`により後から書き込まれた方が一部フィールドをNULLで上書きする可能性
+1. **ResponseEndpointDatastore.saveRequest** (`src/usecases/oid4vp-repository.ts:37-56`)
+   - ✅ 追加: nonce, session, consumed_at カラム
+   - ✅ 全フィールドを保存するように修正
 
-### 🔄 保留中の作業
+2. **ResponseEndpointDatastore.getRequest** (`src/usecases/oid4vp-repository.ts:57-76`)
+   - ✅ 追加: nonce を戻り値に含める
 
-#### データ保存の統一化が必要
+3. **VerifierDatastore.saveRequest** (`src/usecases/oid4vp-repository.ts:123-142`)
+   - ✅ 追加: response_type, redirect_uri_returned_by_response_uri, dcql_query カラム
+   - ✅ 全フィールドを保存するように修正
 
-以下の修正が必要だが、設計全体の見直しが必要と判断し一旦保留：
+**結果**:
+- ✅ 両方のデータストアが同じフィールドセットを保存
+- ✅ 管理画面で全フィールドが正しく表示される
+- ✅ データの整合性が保たれる
+- ✅ INSERT OR REPLACEによるNULL上書き問題が解消
 
-1. **両方のsaveRequestメソッドを統合または調整**
-   - すべてのフィールドを保存するように修正
-   - または、用途に応じてテーブルを分離
-
-2. **データモデルの整合性確認**
-   - VpRequest型とVpRequestAtVerifier型の関係を明確化
-   - 必要に応じてスキーマ変更
-
-3. **トランザクション管理の見直し**
-   - INSERT OR REPLACEの使用が適切か検証
-   - 更新と挿入のロジック分離
+**関連コミット**: `26cb256` - "fix: resolve critical nonce lifecycle issue in OID4VP request_uri flow"
 
 ### 📋 技術的な詳細
 
@@ -431,33 +416,45 @@ INSERT OR REPLACE INTO requests
 - **UI**: Bootstrap 5 + DataTables.js
 - **データベースAPI**: sqlite（Promise-based async/await）
 
-### 次のステップ（保留）
+### 今後の拡張可能性
 
-データ保存の問題を解決するには、以下のアプローチを検討する必要がある：
+管理画面の基本機能とデータ保存の問題が解決されたため、今後は以下の拡張が可能：
 
-1. **アーキテクチャレビュー**
-   - ResponseEndpointとVerifierの責務を明確化
-   - データモデルの統一または分離を決定
+1. **高度な検索・フィルタリング**
+   - 複数条件での検索
+   - 日時範囲指定
+   - JSONフィールドの内容検索
 
-2. **リファクタリング**
-   - 2つのsaveRequestメソッドの統合
-   - または、テーブル分離（requests_endpoint, requests_verifier）
+2. **データ可視化**
+   - リクエスト数の時系列グラフ
+   - 状態遷移の統計
+   - エラー率の可視化
 
-3. **テストの追加**
-   - データ保存の整合性を確認するテスト
-   - エンドツーエンドのテスト
+3. **エクスポート機能**
+   - CSV/JSONエクスポート
+   - 特定期間のデータダウンロード
+
+4. **テスト用データ生成**
+   - サンプルリクエストの作成
+   - テストシナリオの自動実行
 
 ## まとめ
 
-管理画面の基本機能は完成したが、根本的なデータ保存の問題が発見された。
-この問題は設計全体に関わるため、一旦管理画面の開発を中断し、
-データモデルとリポジトリ層の設計を見直す必要がある。
+管理画面の実装が完了し、根本的なデータ保存の問題も解決されました。
 
 **完了した機能**:
 - ✅ 管理画面のUI（全テーブル表示、統計、データ操作）
 - ✅ Basic認証によるアクセス制御
 - ✅ DataTablesによる高度なテーブル表示
+- ✅ リポジトリ層のデータ保存統合
+- ✅ Nonce lifecycleの修正
 
-**未解決の問題**:
-- ⚠️ リポジトリ層のデータ保存不整合
-- ⚠️ 2つのsaveRequestメソッドの役割の明確化が必要
+**解決した問題**:
+- ✅ リポジトリ層のデータ保存不整合
+- ✅ Nonceの再生成問題
+- ✅ データベーススキーマとアプリケーション層の整合性
+
+**システム状態**:
+- ✅ アプリケーション正常動作中（ポート3000）
+- ✅ 全テーブルのデータが正しく保存・表示される
+- ✅ セキュリティとデータ整合性が確保されている
