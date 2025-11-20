@@ -36,6 +36,15 @@
                             </button>
                         </div>
 
+                        <% if (expiresAt) { %>
+                        <!-- Expiration Time -->
+                        <div class="mb-4">
+                            <div class="alert alert-info" role="alert">
+                                <strong>有効期限:</strong> <span id="expiration-time"></span>
+                            </div>
+                        </div>
+                        <% } %>
+
                         <!-- Status -->
                         <div id="status-container">
                             <div class="spinner-border text-primary" role="status">
@@ -87,6 +96,24 @@
         console.log('Auth Request URL:', authRequestUrl);
         console.log('Query String:', queryString);
         console.log('Request URI:', requestUri);
+
+        <% if (expiresAt) { %>
+        // Display expiration time
+        const expiresAt = <%= expiresAt %>;
+        // Convert from seconds to milliseconds for JavaScript Date
+        const expirationDate = new Date(expiresAt * 1000);
+        const expirationTimeElement = document.getElementById('expiration-time');
+        if (expirationTimeElement) {
+            expirationTimeElement.textContent = expirationDate.toLocaleString('ja-JP', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+        <% } %>
 
         // Load Request Object when modal is shown
         const requestObjectModal = document.getElementById('requestObjectModal');

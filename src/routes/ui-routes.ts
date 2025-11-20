@@ -126,9 +126,25 @@ export const routes = async (appContext: AppContext) => {
       margin: 2,
     });
 
+    // Get expiration time from session
+    const requestId = ctx.session?.request_id;
+    let expiresAt: number | null = null;
+
+    if (requestId) {
+      try {
+        const request = await responseEndpoint.getRequest(requestId);
+        if (request) {
+          expiresAt = request.issuedAt + request.expiredIn;
+        }
+      } catch (error) {
+        logger.error(`Failed to get request expiration: ${error}`);
+      }
+    }
+
     await ctx.render("auth-request", {
       authRequestUrl,
       qrCodeDataUrl,
+      expiresAt,
     });
   });
 
