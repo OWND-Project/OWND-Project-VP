@@ -57,17 +57,25 @@ npm run build
 ```bash
 # アプリケーション設定
 APP_PORT=3000
-NODE_ENV=prod
-APP_HOST=https://your-frontend-app.com  # フロントエンドアプリのオリジン（CORS用）
+NODE_ENV=production              # 本番環境ではproductionを設定（Secure Cookieを有効化）
+APP_HOST=https://your-verifier.com  # アプリケーションのホストURL（セッションCookie設定用）
 
 # OID4VP設定
-OID4VP_CLIENT_ID=https://your-verifier.com
-OID4VP_CLIENT_ID_SCHEME=x509_san_dns
-OID4VP_REQUEST_HOST=oid4vp://your-verifier.com
+OID4VP_CLIENT_ID=x509_san_dns:your-verifier.com  # Client Identifier Prefix形式
+OID4VP_CLIENT_ID_SCHEME=x509_san_dns             # redirect_uri, x509_san_dns, x509_hash
+OID4VP_REQUEST_HOST=haip-vp://authorize          # Authorization Request URLスキーム
 OID4VP_REQUEST_URI=https://your-verifier.com/oid4vp/request
 OID4VP_RESPONSE_URI=https://your-verifier.com/oid4vp/responses
-OID4VP_REDIRECT_URI=https://your-frontend-app.com/callback
-OID4VP_PRESENTATION_DEFINITION_URI=https://your-verifier.com/oid4vp/presentation-definition
+OID4VP_REDIRECT_URI_RETURNED_BY_RESPONSE_URI=https://your-verifier.com/result  # Wallet応答後のリダイレクト先
+
+# クライアントメタデータ
+OID4VP_CLIENT_METADATA_NAME=Your Verifier Name
+OID4VP_CLIENT_METADATA_LOGO_URI=https://your-verifier.com/logo.png
+OID4VP_CLIENT_METADATA_POLICY_URI=https://your-verifier.com/policy.html
+OID4VP_CLIENT_METADATA_TOS_URI=https://your-verifier.com/tos.html
+
+# VP Token暗号化（オプション）
+OID4VP_VP_TOKEN_ENCRYPTION_ENABLED=true  # VP Tokenの暗号化を有効化
 
 # Verifier証明書（本番環境）
 # 有効なX.509証明書とJWKを設定
@@ -80,20 +88,43 @@ MIICx...
 DATABASE_FILEPATH=./data/database.sqlite
 
 # Cookie Secret（ランダムな文字列を生成）
-OID4VP_COOKIE_SECRET=<generate-random-secret-here>
+COOKIE_SECRET=<generate-random-secret-here>
 
 # ログレベル
 LOG_LEVEL=info
 
-# オプション: タイムアウト設定
-OID4VP_REQUEST_EXPIRED_IN=600  # 秒（デフォルト: 600秒 = 10分）
+# オプション: タイムアウト設定（秒）
+OID4VP_REQUEST_EXPIRED_IN_AT_VERIFIER=600
+OID4VP_REQUEST_EXPIRED_IN_AT_RESPONSE_ENDPOINT=600
 OID4VP_RESPONSE_EXPIRED_IN=600
 POST_SESSION_EXPIRED_IN=600
 POST_STATE_EXPIRED_IN=600
-
-# オプション: VP Tokenサイズ制限
-OID4VP_VERIFIER_AUTH_RESPONSE_LIMIT=1mb
 ```
+
+### 環境変数一覧
+
+| 環境変数名 | 必須 | 説明 | 例 |
+|-----------|------|------|-----|
+| APP_PORT | ○ | アプリケーションのポート番号 | 3000 |
+| NODE_ENV | ○ | 環境（production時はSecure Cookie有効） | production |
+| APP_HOST | ○ | アプリケーションのホストURL | https://your-verifier.com |
+| OID4VP_CLIENT_ID | ○ | Client ID（Prefix形式） | x509_san_dns:your-verifier.com |
+| OID4VP_CLIENT_ID_SCHEME | ○ | Client IDスキーム | x509_san_dns |
+| OID4VP_REQUEST_HOST | ○ | Authorization RequestのURLスキーム | haip-vp://authorize |
+| OID4VP_REQUEST_URI | ○ | Request Object取得エンドポイント | https://your-verifier.com/oid4vp/request |
+| OID4VP_RESPONSE_URI | ○ | VP Token送信エンドポイント | https://your-verifier.com/oid4vp/responses |
+| OID4VP_REDIRECT_URI_RETURNED_BY_RESPONSE_URI | - | Wallet応答後のリダイレクト先 | https://your-verifier.com/result |
+| OID4VP_VP_TOKEN_ENCRYPTION_ENABLED | - | VP Token暗号化の有効化 | true |
+| OID4VP_VERIFIER_JWK | ○ | 検証者のJWK（秘密鍵含む） | {"kty":"EC",...} |
+| OID4VP_VERIFIER_X5C | ○ | X.509証明書チェーン（PEM形式） | -----BEGIN CERTIFICATE----- |
+| COOKIE_SECRET | ○ | セッションCookieの暗号化キー | ランダム文字列 |
+| DATABASE_FILEPATH | - | SQLiteデータベースのパス | ./data/database.sqlite |
+
+### セッション設定に関する注意
+
+- **NODE_ENV=production**: HTTPS環境で動作する場合は必ず`production`に設定してください。これにより`Secure`属性がCookieに付与されます。
+- **APP_HOST**: セッションCookieの設定に使用されます。zrokなどのトンネリングサービスを使用する場合は、トンネルのURLを設定してください。
+- Cookieが正しく設定されない場合、VP Token検証後のクレデンシャル情報表示でセッションが失われる可能性があります。
 
 ### Cookie Secretの生成
 
