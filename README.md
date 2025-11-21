@@ -130,6 +130,8 @@ cp .env.template.verifier_node ./apps/verifier_node/.env
 |------------------------------------------------|--------------------------------------------|----------------------------------------|
 | APP_TYPE                                      | アプリの種類                              | VERIFIER_NODE                         |
 | APP_PORT                                      | アプリのポート番号                        | 3002                                  |
+| APP_HOST                                      | アプリのホストURL（セッションCookie設定用） | https://example.com                   |
+| NODE_ENV                                      | 環境（production時はSecure Cookieを使用）  | production                            |
 | **OrbitDB 設定**                               |                                            |                                        |
 | ORBITDB_ROOT_ID_KEY                           | OrbitDB のルート ID キー                  | peer_vp                               |
 | OID4VP_ORBITDB_ROOT_ID_KEY                    | OID4VP 用 OrbitDB のルート ID キー         | oid4vp                                |
@@ -140,23 +142,30 @@ cp .env.template.verifier_node ./apps/verifier_node/.env
 | OID4VP_CLIENT_ID_SCHEME                       | クライアント ID スキーム                   | x509_san_dns                          |
 | OID4VP_VERIFIER_JWK                           | 検証者の JWK（JSON Web Key）               | {"kty":"EC","crv":"P-256","x":"","d":""} |
 | OID4VP_VERIFIER_X5C                           | 検証者の X.509 証明書（PEM 形式）          | PEM形式のサーバー証明書                |
-| OID4VP_REQUEST_HOST                           | OID4VP のリクエストホスト                  | oid4vp://localhost/request            |
+| OID4VP_REQUEST_HOST                           | OID4VP のリクエストホスト（Authorization Request URL生成用）| haip-vp://authorize            |
+| OID4VP_VP_TOKEN_ENCRYPTION_ENABLED            | VP Token暗号化の有効化                     | true                                   |
 | OID4VP_REQUEST_EXPIRED_IN_AT_RESPONSE_ENDPOINT| レスポンスエンドポイントでのリクエスト有効期限 | 600                                    |
 | OID4VP_REQUEST_EXPIRED_IN_AT_VERIFIER         | 検証者でのリクエスト有効期限                | 600                                    |
 | OID4VP_RESPONSE_EXPIRED_IN                    | OID4VP のレスポンス有効期限                | 600                                    |
-| OID4VP_CLIENT_ID                              | クライアント ID                             | http://localhost                      |
+| OID4VP_CLIENT_ID                              | クライアント ID                             | x509_san_dns:example.com              |
 | OID4VP_CLIENT_METADATA_NAME                   | クライアントの名前                         | boolcheck.com                         |
-| OID4VP_CLIENT_METADATA_LOGO_URI               | クライアントのロゴ URI                     | http://localhost/logo.png             |
-| OID4VP_CLIENT_METADATA_POLICY_URI             | クライアントのポリシー URI                 | http://localhost/policy.html          |
-| OID4VP_CLIENT_METADATA_TOS_URI                | クライアントの利用規約 URI                 | http://localhost/tos.html             |
-| OID4VP_PRESENTATION_DEFINITION_URI            | プレゼンテーション定義の URI               | http://localhost/oid4vpi/presentation-definitions |
-| OID4VP_REQUEST_URI                            | OID4VP のリクエスト URI                    | http://localhost/oid4vpi/request      |
-| OID4VP_RESPONSE_URI                           | OID4VP のレスポンス URI                    | http://localhost/oid4vpi/responses    |
-| OID4VP_REDIRECT_URI                           | OID4VP のリダイレクト URI                  | http://localhost/oid4vpi/redirect     |
+| OID4VP_CLIENT_METADATA_LOGO_URI               | クライアントのロゴ URI                     | https://example.com/logo.png          |
+| OID4VP_CLIENT_METADATA_POLICY_URI             | クライアントのポリシー URI                 | https://example.com/policy.html       |
+| OID4VP_CLIENT_METADATA_TOS_URI                | クライアントの利用規約 URI                 | https://example.com/tos.html          |
+| OID4VP_PRESENTATION_DEFINITION_URI            | プレゼンテーション定義の URI               | https://example.com/oid4vp/presentation-definitions |
+| OID4VP_REQUEST_URI                            | OID4VP のリクエスト URI                    | https://example.com/oid4vp/request    |
+| OID4VP_RESPONSE_URI                           | OID4VP のレスポンス URI                    | https://example.com/oid4vp/responses  |
+| OID4VP_REDIRECT_URI_RETURNED_BY_RESPONSE_URI  | Wallet応答後のリダイレクト先URI             | https://example.com/result            |
 | **その他**                                    |                                            |                                        |
 | POST_SESSION_EXPIRED_IN                       | セッションの有効期限（秒）                 | 600                                    |
 | POST_STATE_EXPIRED_IN                         | 状態の有効期限（秒）                       | 600                                    |
 | COOKIE_SECRET                                 | クッキーの暗号化キー                        | some secret hurr                      |
+
+### セッション設定に関する注意
+
+- **NODE_ENV=production**: HTTPS環境で動作する場合は必ず`production`に設定してください。これにより`Secure`属性がCookieに付与されます。
+- **APP_HOST**: セッションCookieの`domain`設定に使用されます。zrokなどのトンネリングサービスを使用する場合は、トンネルのURLを設定してください。
+- Cookieが正しく設定されない場合、VP Token検証後のクレデンシャル情報表示でセッションが失われる可能性があります。
 
 # 実行
 ## BOOL_NODE
