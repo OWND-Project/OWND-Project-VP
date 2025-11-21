@@ -1,137 +1,55 @@
-# boolcheck backend
+# OWND-Project-VP
 
-本リポジトリにはboolcheckを構成するwebアプリケーションが3つ含まれています。
+OpenID for Verifiable Presentations (OID4VP) プロトコルに準拠したVerifier実装です。Identity Walletから提示されるVerifiable Credentials (VC) を要求・検証する機能を提供します。
+
+## 概要
 
 ```mermaid
 graph TB
-    C[Mobile/Browser Client] <--> API2(REST API)
-    C2(Identity Wallet) <--> API3(REST API)
-    API3 --> API(REST API)
-    API <--> DB[OrbitDB]
-    API2 <--> DB2[OrbitDB]
-    DB <--> IPFS1[IPFS Node]
-    DB2 <--> IPFS2[IPFS Node]
-    IPFS2 <--> IPFS1
-
-    subgraph System[BOOL_NODE]
-        API
-        DB
-        IPFS1
-    end
-    subgraph System2[API_NODE]
-        API2
-        DB2
-        IPFS2
-    end
-    subgraph System3[VERIFIER_NODE]
-        API3
-    end
+    Client[Web Browser] -->|HTTPS| Web[Web UI]
+    Wallet[Identity Wallet] -->|OID4VP Protocol| API[OID4VP Verifier API]
+    Web -->|REST API| API
+    API --> DB[(SQLite Database)]
 ```
 
-## BOOL_NODE
-Boolcheckでは真偽情報を[分散データベース(OrbitDB)](https://github.com/orbitdb/orbitdb)に書き込みます。
-アーキテクチャや機能については[こちら](./docs/architecture.md)を参照ください。
+## 主な機能
 
-BOOL_NODEは真偽情報の更新用ノードであり、更新系の[API](./docs/open-api/node.yaml)を公開します。
-更新系APIへのアクセスは一部を除きVERIFIER_NODEからのアクセスのみを許容します。
+- **OID4VP プロトコル準拠**: Authorization Request生成、VP Token検証
+- **DCQL (Digital Credentials Query Language)**: クレデンシャル要求の柔軟な定義
+- **SD-JWT対応**: Selective Disclosure JWTの処理
+- **X.509証明書検証**: x5cヘッダーによる証明書チェーン検証
+- **Web UI**: クレーム選択、QRコード表示、検証結果表示
 
-また、真偽情報のデータ構造については[こちら](./docs/er.md)を参照してください。
+## ドキュメント
 
-## API_NODE
-API_NODEは起動するとBOOL_NODEに接続してデータを同期します。
+| ドキュメント | 説明 |
+|-------------|------|
+| [アーキテクチャ](./docs/architecture.md) | システム構成、レイヤー構造 |
+| [デプロイメントガイド](./docs/deployment.md) | 環境設定、デプロイ手順 |
+| [API仕様](./docs/api-specification.md) | REST APIエンドポイント |
+| [OID4VP実装](./docs/oid4vp-implementation.md) | OID4VPプロトコル実装詳細 |
 
-API_NODEは真偽情報の参照用ノードであり、参照系の[API](./docs/open-api/api.yaml)を公開します。
+## クイックスタート
 
-## VERIFIER_NODE
-VERIFIER_NODEはOID4VPのVerifier機能を提供し、主にアイデンティティウォレットと連携して真偽情報を受け取ります。
+### 必要条件
 
-# インストール
+- Node.js 20以上
 
-## 必要条件
+### インストール
 
-Node.js バージョン 20 以上がインストールされていることを確認してください。必要に応じて、nvm（Node Version Manager）を使用して適切な Node.js のバージョンをインストールし、使用できます。
-
-```shell
-nvm install stable --latest-npm
-nvm use 20
-yarn
+```bash
+npm install
 ```
-
-# ビルド
-## BOOL_NODE
-
-```shell
-yarn run build:bool_node
-```
-
-.env.template を元に .env ファイルを作成してください。必要に応じて内容を調整してください。
-
-```shell
-cp .env.template.bool_node ./apps/bool_node/.env
-```
-
-| 環境変数名              | 内容                           | 値                     |
-|------------------------|------------------------------|----------------------|
-| APP_TYPE              | アプリの種類                 | BOOL_NODE            |
-| APP_PORT              | アプリのポート番号           | 3000                 |
-| NODE_ENV              | 環境                         | local                |
-| **OrbitDB 設定**       |                              |                      |
-| PEER_ADDR            | ピアのアドレス               | /ip4/0.0.0.0/tcp/4000 |
-| ORBITDB_ROOT_ID_KEY  | OrbitDB のルート ID キー     | main_peer            |
-| IPFS_PATH            | IPFS のデータ保存先          | ./ipfs/blocks        |
-| ORBITDB_PATH         | OrbitDB のデータ保存先       | ./orbitdb            |
-| KEYSTORE_PATH        | キーストアの保存先           | ./keystore           |
-| **その他**            |                              |                      |
-| DATABASE_FILEPATH    | データベースファイルのパス   | ./database.sqlite    |
-
----
-
-## API_NODE
-
-```shell
-yarn run build:api_node
-```
-
-.env.template を元に .env ファイルを作成してください。必要に応じて内容を調整してください。
-
-```shell
-cp .env.template.api_node ./apps/api_node/.env
-```
-
-| 環境変数名              | 内容                           | 値                     |
-|------------------------|------------------------------|----------------------|
-| APP_TYPE              | アプリの種類                 | API_NODE             |
-| APP_PORT              | アプリのポート番号           | 3001                 |
-| NODE_ENV              | 環境                         | local                |
-| **OrbitDB 設定**       |                              |                      |
-| PEER_ADDR            | ピアのアドレス               | /ip4/0.0.0.0/tcp/4001 |
-| ORBITDB_ROOT_ID_KEY  | OrbitDB のルート ID キー     | peer2                |
-| IPFS_PATH            | IPFS のデータ保存先          | ./ipfs/blocks        |
-| ORBITDB_PATH         | OrbitDB のデータ保存先       | ./orbitdb            |
-| KEYSTORE_PATH        | キーストアの保存先           | ./keystore           |
-| **その他**            |                              |                      |
-| DATABASE_FILEPATH    | データベースファイルのパス   | ./database.sqlite    |
-
----
-
-## OID4VP Verifier
-
-OID4VP Verifier機能のみを使用する場合のセットアップ手順です。
 
 ### ビルド
 
-```shell
-npm install
+```bash
 npm run build
 ```
 
-### 環境設定
+### 実行
 
-環境変数の詳細な設定方法については[デプロイメントガイド](./docs/deployment.md)を参照してください。
-
-### クイックスタート
-
-```shell
+```bash
 # 開発環境
 npm run dev
 
@@ -139,21 +57,10 @@ npm run dev
 NODE_ENV=production npm start
 ```
 
-# 実行
-## BOOL_NODE
-```shell
-nvm use 20
-yarn run start:bool_node
-```
+### 環境設定
 
-## API_NODE
-```shell
-nvm use 20
-yarn run start:api_node
-```
+環境変数の詳細な設定方法については[デプロイメントガイド](./docs/deployment.md)を参照してください。
 
-## VERIFIER_NODE
-```shell
-nvm use 20
-yarn run start:verifier_node
-```
+## ライセンス
+
+このプロジェクトはMITライセンスの下で公開されています。
