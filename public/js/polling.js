@@ -12,8 +12,9 @@ async function pollStatus() {
     const data = await response.json();
 
     if (data.value === 'committed') {
-      // Success - redirect to credential info page
-      window.location.href = '/credential-info';
+      // Success - redirect to credential info page with requestId as fallback
+      const requestId = data.requestId;
+      window.location.href = requestId ? `/credential-info?request_id=${requestId}` : '/credential-info';
     } else if (data.value === 'expired' || data.value === 'invalid_submission') {
       // Error - redirect to error page
       window.location.href = `/error?type=${data.value}`;

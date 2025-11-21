@@ -341,25 +341,31 @@ export const initOID4VPInteractor = (
     logger.info("consumeAuthResponse start");
 
     // exchange response code for auth response
+    logger.info(`exchangeResponseCode: code=${responseCode}, transactionId=${transactionId}`);
     const exchange = await responseEndpoint.exchangeResponseCodeForAuthResponse(
       responseCode,
       transactionId,
     );
     if (!exchange.ok) {
+      logger.info(`exchange failed: ${JSON.stringify(exchange.error)}`);
       return { ok: false, error: handleEndpointError(exchange.error) };
     }
+    logger.info(`exchange success: requestId=${exchange.payload.requestId}`);
 
     // id token
     const { requestId, payload } = exchange.payload;
 
     // nonce
+    logger.info(`getRequest for requestId=${requestId}`);
     const getRequest = await verifier.getRequest(requestId);
     if (!getRequest.ok) {
+      logger.info(`getRequest failed: ${JSON.stringify(getRequest.error)}`);
       return {
         ok: false,
         error: handleRequestError(requestId, getRequest.error),
       };
     }
+    logger.info(`getRequest success, nonce=${getRequest.payload.nonce}`);
     const { nonce } = getRequest.payload;
 
     // id token (SIOPv2 validation removed - use standard OID4VP validation)

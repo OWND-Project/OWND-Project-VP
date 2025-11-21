@@ -39,6 +39,7 @@ export interface VpRequestAtVerifier {
 export interface VerifierDatastore {
   saveRequest: (request: VpRequestAtVerifier) => Promise<void>;
   getRequest: (requestId: string) => Promise<VpRequestAtVerifier | null>;
+  consumeRequest: (requestId: string, consumedAt: number) => Promise<void>;
   // Removed: savePresentationDefinition and getPresentationDefinition (PEX deprecated)
 }
 
@@ -215,18 +216,16 @@ export const initVerifier = (datastore: VerifierDatastore) => {
   const consumeRequest = async (
     requestId: string,
   ): Promise<Result<VpRequestAtVerifier, GetRequestError>> => {
-    // const request = await datastore.getRequest(requestId);
     const request = await getRequest(requestId);
     if (!request.ok) {
       return request;
     }
-    const __request = {
-      ...request.payload,
-      consumedAt: getCurrentUnixTimeInSeconds(),
-    };
+    const consumedAt = getCurrentUnixTimeInSeconds();
     try {
-      await datastore.saveRequest(__request);
-      return { ok: true, payload: __request };
+      // Use dedicated consumeRequest method to only update consumed_at
+      // This preserves other fields like dcqlQuery, responseType, etc.
+      await datastore.consumeRequest(requestId, consumedAt);
+      return { ok: true, payload: { ...request.payload, consumedAt } };
     } catch (err) {
       console.error(err);
       return { ok: false, error: { type: "UNEXPECTED_ERROR", cause: err } };

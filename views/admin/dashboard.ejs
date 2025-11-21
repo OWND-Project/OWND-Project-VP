@@ -96,6 +96,7 @@
                                     <th>Transaction ID</th>
                                     <th>Created At</th>
                                     <th>Expires At</th>
+                                    <th>Consumed At</th>
                                     <th>DCQL Query</th>
                                 </tr>
                             </thead>
@@ -112,6 +113,7 @@
                                     </td>
                                     <td><%= new Date(req.created_at * 1000).toLocaleString('ja-JP') %></td>
                                     <td><%= new Date(req.expires_at * 1000).toLocaleString('ja-JP') %></td>
+                                    <td><%= req.consumed_at ? new Date(req.consumed_at * 1000).toLocaleString('ja-JP') : 'N/A' %></td>
                                     <td class="json-cell">
                                         <% if (req.dcql_query_parsed) { %>
                                             <button class="btn btn-sm btn-info" onclick='showDcqlModal(<%= JSON.stringify(req.dcql_query_parsed) %>)'>View DCQL</button>

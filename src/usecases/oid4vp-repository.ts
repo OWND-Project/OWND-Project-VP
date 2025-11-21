@@ -156,6 +156,12 @@ export const initVerifierDatastore = (db: Database): VerifierDatastore => {
       } as VpRequestAtVerifier;
     },
     // Removed: savePresentationDefinition and getPresentationDefinition (PEX deprecated)
+    consumeRequest: async (requestId: string, consumedAt: number) => {
+      await db.run(
+        `UPDATE requests SET consumed_at = ? WHERE id = ?`,
+        [consumedAt, requestId]
+      );
+    },
   };
   return verifierDatastore;
 };
@@ -215,14 +221,19 @@ export const initSessionRepository = (db: Database) => {
       learningCredentialJwt,
     };
 
+    // Use INSERT OR REPLACE to create session row if it doesn't exist
     await db.run(
-      `UPDATE sessions
-       SET credential_data = ?, consumed_at = ?
-       WHERE request_id = ?`,
+      `INSERT OR REPLACE INTO sessions
+       (id, request_id, state, credential_data, created_at, expires_at, consumed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
+        uuidv4(),
+        requestId,
+        "committed",
         JSON.stringify(credentialData),
         issuedAt,
-        requestId,
+        issuedAt + expiredIn,
+        issuedAt,
       ]
     );
 

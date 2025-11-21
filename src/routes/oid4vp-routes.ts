@@ -186,12 +186,9 @@ export const routes = async (appContext: AppContext) => {
     }
     const state = await interactor.getStates(requestId, postStatePresenter);
     if (state) {
-      // VP Token検証完了後、セッションを無効化
-      if (state.value === "committed") {
-        ctx.session = null;
-      }
       ctx.status = 200;
-      ctx.body = state;
+      // requestIdをレスポンスに含める（セッションが失われた場合のフォールバック用）
+      ctx.body = { ...state, requestId };
     } else {
       ctx.status = 404;
     }

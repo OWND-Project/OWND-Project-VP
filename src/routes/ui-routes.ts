@@ -150,7 +150,10 @@ export const routes = async (appContext: AppContext) => {
 
   // クレデンシャル情報表示画面
   router.get("/credential-info", async (ctx) => {
-    const requestId = ctx.session?.request_id;
+    logger.info(`/credential-info session: ${JSON.stringify(ctx.session)}`);
+    logger.info(`/credential-info cookies: ${ctx.headers.cookie}`);
+    // セッションまたはクエリパラメータからrequest_idを取得（フォールバック）
+    const requestId = ctx.session?.request_id || (ctx.query.request_id as string);
 
     if (!requestId) {
       ctx.redirect("/error?type=MISSING_SESSION");
@@ -170,6 +173,11 @@ export const routes = async (appContext: AppContext) => {
     } else {
       ctx.redirect(`/error?type=${result.error.type}`);
     }
+  });
+
+  // 結果画面（スマホからのリダイレクト先）
+  router.get("/result", async (ctx) => {
+    await ctx.render("result");
   });
 
   // エラー画面
