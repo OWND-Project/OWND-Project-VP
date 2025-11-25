@@ -170,7 +170,10 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
 
       // JWE復号化
       try {
+        logger.info(`Attempting JWE decryption for state: ${state}`);
+        logger.info(`JWE format check - response starts with: ${payload.response.substring(0, 50)}...`);
         const privateJwk = JSON.parse(__request.encryptionPrivateJwk);
+        logger.info(`Private JWK loaded, attempting decryption`);
         const decrypted = await decryptJWE(payload.response, privateJwk);
         // 復号化されたペイロードにstateを追加
         decryptedPayload = {
@@ -179,7 +182,10 @@ export const initResponseEndpoint = (datastore: ResponseEndpointDatastore) => {
         };
         logger.info("JWE decryption successful");
       } catch (error) {
-        logger.error("JWE decryption failed", error);
+        logger.error("JWE decryption failed:", error);
+        logger.error(`Error details: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`);
+        logger.error(`Payload.response type: ${typeof payload.response}`);
+        logger.error(`Payload.response length: ${payload.response?.length}`);
         return {
           ok: false,
           error: { type: "INVALID_AUTH_RESPONSE_PAYLOAD" },

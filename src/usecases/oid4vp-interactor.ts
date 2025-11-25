@@ -242,8 +242,17 @@ export const initOID4VPInteractor = (
 
     // Prepare client metadata with encryption support if enabled
     let clientMetadata = getClientMetadata();
-    if (request.encryptionPublicJwk) {
-      const encryptionPublicJwk = JSON.parse(request.encryptionPublicJwk);
+    if (request.encryptionPrivateJwk) {
+      // Generate public key from saved private key
+      const { publicJwkFromPrivate } = await import("elliptic-jwk");
+      const encryptionPrivateJwk = JSON.parse(request.encryptionPrivateJwk);
+      const publicJwk = publicJwkFromPrivate(encryptionPrivateJwk);
+      // Add encryption metadata (required for ECDH-ES)
+      const encryptionPublicJwk = {
+        ...publicJwk,
+        use: "enc",
+        alg: "ECDH-ES",
+      } as any;
       clientMetadata = {
         ...clientMetadata,
         jwks: {
