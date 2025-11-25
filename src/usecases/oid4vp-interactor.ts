@@ -496,6 +496,8 @@ export const initOID4VPInteractor = (
             given_name: payload.given_name,
             achievement_title: payload.achievement_title,
             achievement_description: payload.achievement_description,
+            learning_outcomes: payload.learning_outcomes,
+            assessment_grade: payload.assessment_grade,
           }
         };
         logger.info(`Successfully decoded Learning Credential with fields: ${Object.keys(learningCredential.fields).filter(k => learningCredential.fields[k]).join(', ')}`);
