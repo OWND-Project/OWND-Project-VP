@@ -146,3 +146,8 @@ docs/work.md
 oid4vp.sqlite
 oid4vp.sqlite-shm
 oid4vp.sqlite-wal
+
+# Debug and test scripts
+check-keys.ts
+verify-jwt.cjs
+verify-jwt2.ts
