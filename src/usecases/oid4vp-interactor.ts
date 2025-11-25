@@ -464,9 +464,58 @@ export const initOID4VPInteractor = (
     }
 
     const session = sessionResult.payload;
+    const { idToken, learningCredentialJwt } = session.data;
+
+    // Decode Learning Credential SD-JWT if present
+    let learningCredential: any = null;
+    if (learningCredentialJwt) {
+      try {
+        logger.info(`Attempting to decode Learning Credential JWT`);
+
+        // Use verifySdJwt to expand disclosures and get complete payload
+        const { verifySdJwt } = await import("../helpers/jwt-helper.js");
+        const env = process.env.ENVIRONMENT;
+        const verifiedResult = await verifySdJwt(learningCredentialJwt, {
+          skipVerifyChain: env !== "prod",
+        });
+
+        logger.info(`Verified SD-JWT result keys: ${Object.keys(verifiedResult).join(', ')}`);
+
+        // Extract the decoded payload with all disclosed claims
+        const payload: any = verifiedResult.decodedPayload || verifiedResult;
+        logger.info(`Decoded payload keys: ${Object.keys(payload).join(', ')}`);
+
+        // Extract credential fields
+        learningCredential = {
+          rawJwt: learningCredentialJwt,
+          fields: {
+            issuing_authority: payload.issuing_authority,
+            issuing_country: payload.issuing_country,
+            date_of_issuance: payload.date_of_issuance,
+            family_name: payload.family_name,
+            given_name: payload.given_name,
+            achievement_title: payload.achievement_title,
+            achievement_description: payload.achievement_description,
+          }
+        };
+        logger.info(`Successfully decoded Learning Credential with fields: ${Object.keys(learningCredential.fields).filter(k => learningCredential.fields[k]).join(', ')}`);
+      } catch (error) {
+        logger.error(`Failed to decode Learning Credential: ${error}`);
+        logger.error(`Error stack: ${(error as Error).stack}`);
+        learningCredential = {
+          rawJwt: learningCredentialJwt,
+          error: `Failed to decode credential: ${(error as Error).message}`
+        };
+      }
+    }
+
     return {
       ok: true,
-      payload: session.data,
+      payload: {
+        idToken,
+        learningCredentialJwt,
+        learningCredential
+      },
     };
   };
 

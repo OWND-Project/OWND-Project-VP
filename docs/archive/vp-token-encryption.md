@@ -1,9 +1,9 @@
 # VP Token暗号化対応（HAIP準拠）
 
 **作成日**: 2025-11-19
-**最終更新**: 2025-11-19
+**最終更新**: 2025-11-25
 **対応仕様**: OpenID4VP 1.0 + HAIP (High Assurance Interoperability Profile)
-**ステータス**: ✅ 実装完了
+**ステータス**: ✅ 実装完了・統合テスト完了
 
 ## 実装進捗
 
@@ -15,6 +15,7 @@
 | Phase 3 | Response Endpoint JWE復号化 | ✅ 完了 | response-endpoint.ts に JWE 復号化処理追加。stateパラメータ(平文)でrequest特定 |
 | Phase 4 | テスト実装 | ✅ 完了 | 全5カテゴリのテスト実装完了。45テスト全て合格 |
 | Phase 5 | ドキュメント更新 | ✅ 完了 | 本ドキュメントに進捗状況反映 |
+| Phase 6 | 実Wallet統合テスト | ✅ 完了 | OWND-Wallet-iOSとの統合。公開鍵導出、Concat KDF、AAD問題を修正 (2025-11-25) |
 
 ## 実装サマリー
 
@@ -77,6 +78,166 @@ Verifier
 全テスト: 45 passing (118ms)
 TypeScriptコンパイル: ✅ エラーなし
 ```
+
+## 実Wallet統合テスト（2025-11-25）
+
+### 統合テスト結果
+
+OWND-Wallet-iOSとの実環境統合テストを実施し、以下を確認：
+
+✅ **成功項目**:
+- エフェメラル鍵ペア生成（P-256, ECDH-ES）
+- client_metadata.jwksへの公開鍵配信
+- Walletによる VP Token の JWE 暗号化
+- Verifier による JWE 復号化
+- Learning Credential の抽出と表示
+- エンドツーエンドの暗号化フロー完了
+
+**テスト日時**: 2025-11-25 03:26:18 UTC
+**環境**: zrok tunnel (https://bemlmh54nmu7.share.zrok.io)
+**使用クレデンシャル**: Learning Credential (田中大学発行)
+
+### 統合時に発見・修正した問題
+
+#### 問題1: 公開鍵がclient_metadataに含まれない
+
+**症状**: 暗号化が有効でもVP Tokenが平文で送信される
+
+**原因**:
+- データベースには `encryption_private_jwk` のみ保存
+- コードが存在しない `encryptionPublicJwk` を参照していた
+
+**修正内容** (src/usecases/oid4vp-interactor.ts:243-263):
+```typescript
+// 秘密鍵から公開鍵を導出
+const { publicJwkFromPrivate } = await import("elliptic-jwk");
+const encryptionPrivateJwk = JSON.parse(request.encryptionPrivateJwk);
+const publicJwk = publicJwkFromPrivate(encryptionPrivateJwk);
+
+// 暗号化メタデータ追加
+const encryptionPublicJwk = {
+  ...publicJwk,
+  use: "enc",
+  alg: "ECDH-ES",
+};
+```
+
+#### 問題2: Wallet側の鍵導出アルゴリズムが不適合
+
+**症状**: JWE復号化失敗 (`ERR_JWE_DECRYPTION_FAILED`)
+
+**原因**:
+- Wallet が HKDF を使用
+- RFC 7518 は Concat KDF (NIST SP 800-56A) を要求
+
+**修正内容** (OWND-Wallet-iOS/tw2023_wallet/Signature/JWEUtil.swift):
+
+Concat KDF 実装:
+```swift
+private static func deriveKey(sharedSecret: SharedSecret, algorithmId: String, keyLength: Int) -> Data {
+    let algIdData = algorithmId.data(using: .utf8)!
+    var otherInfo = Data()
+
+    // AlgorithmID (length-prefixed)
+    var algIdLen = UInt32(algIdData.count).bigEndian
+    otherInfo.append(Data(bytes: &algIdLen, count: 4))
+    otherInfo.append(algIdData)
+
+    // PartyUInfo (empty, length-prefixed)
+    var partyULen = UInt32(0).bigEndian
+    otherInfo.append(Data(bytes: &partyULen, count: 4))
+
+    // PartyVInfo (empty, length-prefixed)
+    var partyVLen = UInt32(0).bigEndian
+    otherInfo.append(Data(bytes: &partyVLen, count: 4))
+
+    // SuppPubInfo (key length in bits, big-endian)
+    var keyLenBits = UInt32(keyLength * 8).bigEndian
+    otherInfo.append(Data(bytes: &keyLenBits, count: 4))
+
+    // Concat KDF using SHA-256
+    let sharedSecretData = sharedSecret.withUnsafeBytes { Data($0) }
+    var counter = UInt32(1).bigEndian
+    let counterData = Data(bytes: &counter, count: 4)
+
+    var hash = SHA256()
+    hash.update(data: counterData)
+    hash.update(data: sharedSecretData)
+    hash.update(data: otherInfo)
+    let digest = hash.finalize()
+
+    return Data(digest.prefix(keyLength))
+}
+```
+
+**参考仕様**: RFC 7518 Section 4.6.2 - Concat KDF
+
+#### 問題3: Wallet側のAES-GCM暗号化でAADが欠落
+
+**症状**: Concat KDF修正後も復号化失敗
+
+**原因**:
+- JWE仕様 (RFC 7516) では Protected Header を AAD (Additional Authenticated Data) として使用必須
+- Wallet の AES-GCM 暗号化で AAD を指定していなかった
+
+**修正内容** (OWND-Wallet-iOS/tw2023_wallet/Signature/JWEUtil.swift):
+```swift
+// Protected Header を構築
+let headerData = try JSONSerialization.data(withJSONObject: header)
+let protectedHeader = headerData.base64URLEncodedString()
+
+// AAD として Protected Header を使用
+let aad = protectedHeader.data(using: .ascii)!
+
+// AES-GCM 暗号化（AAD付き）
+let sealedBox = try AES.GCM.seal(
+    payloadData,
+    using: symmetricKey,
+    nonce: nonce,
+    authenticating: aad  // ← RFC 7516 準拠
+)
+```
+
+**参考仕様**: RFC 7516 Section 5.1 - Additional Authenticated Data
+
+### 統合テスト成功ログ
+
+```
+[2025-11-25T03:26:18.295Z] [response-endpoint.ts:86] info: Attempting JWE decryption for state: 2GiLDtANuKgiFjt2kVRWX
+[2025-11-25T03:26:18.300Z] [response-endpoint.ts:91] info: JWE decryption successful
+[2025-11-25T03:26:18.305Z] [response-endpoint.ts:112] info: Extracted credentials: {
+  "learning_credential": [
+    "eyJhbGci..."
+  ]
+}
+```
+
+### 学んだ教訓
+
+1. **RFC準拠の重要性**:
+   - テストコードでは `jose` ライブラリが自動処理していたため問題が顕在化しなかった
+   - 実Walletとの統合で初めてRFC準拠の詳細（Concat KDF, AAD）が問題になった
+
+2. **クロスプラットフォーム暗号化の注意点**:
+   - Node.js (`jose`) と Swift (`CryptoKit`) で同じアルゴリズム名でも実装が異なる
+   - 特にKDF（鍵導出関数）は仕様の明示的な確認が必須
+
+3. **デバッグ手法**:
+   - Protected Header と秘密鍵を一時ファイル出力して検証 (`/tmp/jwe-debug.json`)
+   - 共有秘密からの鍵導出過程を両側で確認
+
+### 統合テストに伴うコミット
+
+**Verifier側修正** (2025-11-25):
+- **Commit**: 5ad4781 "fix: derive encryption public key from private key in client_metadata"
+  - src/usecases/oid4vp-interactor.ts: 秘密鍵から公開鍵を導出
+  - src/usecases/oid4vp-interactor.ts: 暗号化メタデータ (use, alg) 追加
+- **Commit**: 622e29f "chore: add debug scripts to .gitignore"
+  - .gitignore: デバッグスクリプト (check-keys.ts, verify-jwt.cjs, verify-jwt2.ts) を追加
+
+**Wallet側修正** (別リポジトリ: OWND-Wallet-iOS):
+- JWEUtil.swift: HKDF → Concat KDF 実装
+- JWEUtil.swift: AES-GCM に AAD 追加
 
 ## 概要
 

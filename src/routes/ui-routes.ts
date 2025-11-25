@@ -163,12 +163,12 @@ export const routes = async (appContext: AppContext) => {
     const result = await interactor.getCredentialData(requestId);
 
     if (result.ok) {
-      const { idToken, learningCredentialJwt } = result.payload;
+      const { idToken, learningCredentialJwt, learningCredential } = result.payload;
 
-      // Parse Learning Credential JWT (simplified - just display raw data)
       await ctx.render("credential-info", {
         idToken,
         learningCredentialJwt,
+        learningCredential,
       });
     } else {
       ctx.redirect(`/error?type=${result.error.type}`);
