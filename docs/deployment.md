@@ -126,6 +126,36 @@ POST_STATE_EXPIRED_IN=600
 - **APP_HOST**: セッションCookieの設定に使用されます。zrokなどのトンネリングサービスを使用する場合は、トンネルのURLを設定してください。
 - Cookieが正しく設定されない場合、VP Token検証後のクレデンシャル情報表示でセッションが失われる可能性があります。
 
+### VP Token暗号化に関する注意
+
+`OID4VP_VP_TOKEN_ENCRYPTION_ENABLED=true`を設定すると、VP Tokenの暗号化（JWE形式）が有効になります。
+
+#### 暗号化フロー
+
+1. **エフェメラル鍵ペア生成**（Verifier側）
+   - Authorization Request生成時にエフェメラル鍵ペア（公開鍵/秘密鍵）を生成
+   - 秘密鍵はデータベースに保存（復号化用）
+
+2. **Authorization Requestへの公開鍵追加**
+   - Request Objectの`client_metadata.jwks`に公開鍵を含める
+   - `response_mode`を`direct_post.jwt`に設定
+   - `encryptedResponseEncValuesSupported`を`["A128GCM"]`に設定
+
+3. **VP Token暗号化**（Wallet側）
+   - Walletは`client_metadata.jwks`から公開鍵を取得
+   - VP TokenをJWE形式で暗号化
+
+4. **VP Token復号化**（Verifier側）
+   - 暗号化されたVP Token（JWE）を受信
+   - データベースから保存されていた秘密鍵を取得
+   - JWEを復号化してVP Tokenを取得
+
+#### 注意事項
+
+- **Walletの対応**: Walletが`client_metadata.jwks`をサポートしている必要があります
+- **セキュリティ**: 秘密鍵はデータベースに保存されるため、データベースのセキュリティを確保してください
+- **トラブルシューティング**: Walletから暗号化されたVP Tokenが送信されない場合、Wallet側のログを確認してください
+
 ### Cookie Secretの生成
 
 ```bash
