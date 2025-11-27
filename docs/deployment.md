@@ -165,9 +165,59 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ### X.509証明書の準備
 
-本番環境では、有効なX.509証明書が必要です。
+本番環境では、有効なX.509証明書が必要です。Request Objectの署名に使用されます。
 
-#### 1. Let's Encryptで証明書を取得（推奨）
+#### Client ID Schemeについて
+
+OID4VP 1.0では、Client IDにスキームプレフィックスを付与します：
+
+| スキーム | 形式 | 用途 |
+|---------|------|------|
+| `x509_san_dns` | `x509_san_dns:example.com` | 証明書のSAN DNS名を使用 |
+| `x509_hash` | `x509_hash:<base64url-sha256>` | 証明書のSHA-256ハッシュを使用 |
+| `redirect_uri` | `https://example.com/callback` | リダイレクトURIをそのまま使用 |
+
+#### 方法1: ファイルパス指定（推奨）
+
+秘密鍵と証明書のファイルパスを指定すると、起動時に自動的にJWK、X5C、Client IDが生成されます。
+
+**1. 必要なファイル**
+
+- EC秘密鍵（PEM形式）: `ec_private.key`
+- X.509証明書（PEM形式）: `certificate.cer`
+
+**2. .envファイルに設定**
+
+```bash
+# Client ID Scheme
+OID4VP_CLIENT_ID_SCHEME=x509_hash
+
+# 秘密鍵と証明書のファイルパス
+OID4VP_VERIFIER_PRIVATE_KEY_PATH=../Certificates/ec_private.key
+OID4VP_VERIFIER_CERTIFICATE_PATH=../Certificates/AATL20251110015175.cer
+```
+
+**3. サーバー起動**
+
+サーバー起動時に以下が自動生成されます：
+- `OID4VP_VERIFIER_JWK`: 秘密鍵からJWK形式に変換
+- `OID4VP_VERIFIER_X5C`: 証明書からBase64 DER形式に変換
+- `OID4VP_CLIENT_ID`: 証明書のSHA-256ハッシュから`x509_hash:xxx`形式で生成
+
+起動ログで確認できます：
+```
+Loading certificate config from:
+  Private key: ../Certificates/ec_private.key
+  Certificate: ../Certificates/AATL20251110015175.cer
+Generated certificate config:
+  Client ID: x509_hash:3N0T7GUjp76p-bK_tzbRbAP5nW_nRQVu66ywYvb7tcM
+```
+
+#### 方法2: Let's Encrypt証明書
+
+Let's Encryptで取得した証明書を使用する場合の設定手順です。
+
+**1. 証明書の取得**
 
 ```bash
 # Certbotのインストール
@@ -178,13 +228,15 @@ sudo apt-get install certbot
 sudo certbot certonly --standalone -d your-verifier.com
 ```
 
-#### 2. 証明書をPEM形式で読み込み
+**2. 証明書をBase64エンコード**
 
 ```bash
-# 証明書をBase64エンコード
 cat /etc/letsencrypt/live/your-verifier.com/fullchain.pem | base64 -w 0
+```
 
-# 秘密鍵からJWKを生成（elliptic-jwkを使用）
+**3. 秘密鍵からJWKを生成**
+
+```bash
 node -e "
 const fs = require('fs');
 const ellipticJwk = require('elliptic-jwk');
@@ -194,9 +246,36 @@ console.log(JSON.stringify(jwk));
 "
 ```
 
-#### 3. 環境変数に設定
+**4. 環境変数に設定**
 
 `.env` ファイルに証明書とJWKを設定します。
+
+#### 方法3: 開発用自己署名証明書
+
+開発環境で自己署名証明書を使用する場合：
+
+```bash
+# EC秘密鍵の生成
+openssl ecparam -name prime256v1 -genkey -noout -out dev_private.key
+
+# 自己署名証明書の生成
+openssl req -new -x509 -key dev_private.key -out dev_cert.pem -days 365 -subj "/CN=localhost"
+
+# JWK形式に変換（上記の手順を参照）
+# Base64 DER形式に変換（上記の手順を参照）
+```
+
+**注意**: 自己署名証明書は開発環境専用です。本番環境では使用しないでください。
+
+#### 証明書更新時の注意
+
+証明書を更新した場合：
+
+1. 新しい秘密鍵と証明書ファイルを配置
+2. `.env`のファイルパスを更新（必要な場合）
+3. サーバーを再起動（JWK、X5C、Client IDは自動的に再生成されます）
+
+**注意**: `x509_hash`スキームを使用している場合、証明書が変わるとClient IDも変わります。
 
 ## デプロイ方法
 

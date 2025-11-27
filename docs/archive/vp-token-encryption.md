@@ -94,7 +94,7 @@ OWND-Wallet-iOSとの実環境統合テストを実施し、以下を確認：
 - エンドツーエンドの暗号化フロー完了
 
 **テスト日時**: 2025-11-25 03:26:18 UTC
-**環境**: zrok tunnel (https://bemlmh54nmu7.share.zrok.io)
+**環境**: zrok tunnel (https://6g7dylei8jvm.share.zrok.io)
 **使用クレデンシャル**: Learning Credential (田中大学発行)
 
 ### 統合時に発見・修正した問題
