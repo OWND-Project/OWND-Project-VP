@@ -72,7 +72,6 @@ export const verifyVcForW3CVcDataV1 = async <T>(
           },
        */
   const result = await verifyJwt<VerifiableCredential<T>>(vcJwt, {
-    skipVerifyChain: publicKeySetting.skipVerifyChain,
     secret: publicKeySetting.secret,
   });
   if (result.ok) {
@@ -89,18 +88,15 @@ export const verifyVcForW3CVcDataV1 = async <T>(
  */
 export const verifyJwt = async <T>(
   __jwt: string,
-  options: { skipVerifyChain?: boolean; secret?: Uint8Array } = {
-    skipVerifyChain: false,
-  },
+  options: { secret?: Uint8Array } = {},
 ): Promise<Result<T & JWTPayload, unknown>> => {
-  const { skipVerifyChain, secret } = options;
+  const { secret } = options;
   let key: KeyLike | Uint8Array;
   const protectedHeader = decodeProtectedHeader(__jwt);
   const { jwk, x5c, alg } = protectedHeader;
   if (x5c) {
-    if (skipVerifyChain !== true) {
-      await verifyCertificateChain(x5c);
-    }
+    // Always verify certificate chain using system + custom trusted certificates
+    await verifyCertificateChain(x5c);
     const x509 = `-----BEGIN CERTIFICATE-----\n${x5c![0]}\n-----END CERTIFICATE-----`;
     key = await importX509(x509, alg || "ES256");
   } else if (jwk) {

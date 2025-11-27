@@ -95,12 +95,12 @@ export const issueSdJwt = async (
 
 export const verifySdJwt = async (
   compactSDJWT: string,
-  publicKeySetting: PublicKeySetting,
+  publicKeySetting: PublicKeySetting = {},
 ) => {
   // https://github.com/Meeco/sd-jwt?tab=readme-ov-file#verifysdjwt-example
   const verifier = async (__jwt: string) => {
     const result = await verifyJwt(__jwt, {
-      skipVerifyChain: publicKeySetting.skipVerifyChain,
+      secret: publicKeySetting.secret,
     });
     return result.ok;
   };

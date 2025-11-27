@@ -185,7 +185,6 @@ export interface ClientMetadata {
 }
 
 export interface PublicKeySetting {
-  skipVerifyChain?: boolean;
   secret?: Uint8Array;
 }
 

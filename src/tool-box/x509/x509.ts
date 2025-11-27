@@ -3,6 +3,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import * as pvutils from "pvutils";
 import { CERT_PEM_POSTAMBLE } from "./constant.js";
+import { getCustomTrustedCertificates } from "../../helpers/certificate-loader.js";
 
 interface CertificateInfo {
   subject: {
@@ -96,23 +97,42 @@ export const getCertificatesInfo = (certs: string[]): CertificateInfo[] => {
   });
 };
 
+/**
+ * Base64エンコードされた証明書をpkijs.Certificateに変換
+ */
+const base64ToPkijsCert = (base64Cert: string): pkijs.Certificate => {
+  const der = Buffer.from(base64Cert, "base64");
+  const asn1 = asn1js.fromBER(der);
+  if (asn1.offset === -1) {
+    throw new Error("Error parsing ASN.1 data");
+  }
+  return new pkijs.Certificate({ schema: asn1.result });
+};
+
 export const verifyCertificateChain = async (
   certs: string[],
 ): Promise<void> => {
-  const trustedCerts = tls.rootCertificates.map((cert) => {
+  // システムのルート証明書を信頼リストに追加
+  const trustedCerts: pkijs.Certificate[] = tls.rootCertificates.map((cert) => {
     const pem = cert
       .replace(/-----BEGIN CERTIFICATE-----/, "")
       .replace(/-----END CERTIFICATE-----/, "")
       .replace(/\n/g, "");
-    const der = Buffer.from(pem, "base64");
-    const asn1 = asn1js.fromBER(der);
-    if (asn1.offset === -1) {
-      throw new Error("Error parsing ASN.1 data");
-    }
-
-    // 証明書オブジェクトに変換
-    return new pkijs.Certificate({ schema: asn1.result });
+    return base64ToPkijsCert(pem);
   });
+
+  // カスタム信頼証明書（中間証明書、ルート証明書）を追加
+  const customCerts = getCustomTrustedCertificates();
+  for (const customCert of customCerts) {
+    try {
+      const pkijsCert = base64ToPkijsCert(customCert);
+      trustedCerts.push(pkijsCert);
+    } catch (error) {
+      console.warn("Failed to parse custom trusted certificate:", error);
+    }
+  }
+
+  // 検証対象の証明書チェーンを変換
   const certsArray: pkijs.Certificate[] = certs.map((cert) => {
     const asn1Cert = asn1js.fromBER(
       pvutils.stringToArrayBuffer(pvutils.fromBase64(cert)),

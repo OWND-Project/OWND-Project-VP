@@ -2,7 +2,7 @@ import * as dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { init } from "./api.js";
-import { initCertificateFromFiles } from "./helpers/certificate-loader.js";
+import { initCertificateFromFiles, initTrustedCertificates } from "./helpers/certificate-loader.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,6 +25,9 @@ try {
   console.error("Certificate initialization failed:", error);
   process.exit(1);
 }
+
+// Load trusted certificates for credential verification
+initTrustedCertificates();
 
 const port = process.env.OID4VP_PORT || 3000;
 const cwd = process.cwd();

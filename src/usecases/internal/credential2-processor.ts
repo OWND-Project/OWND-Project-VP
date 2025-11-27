@@ -53,11 +53,8 @@ export const extractCredentialFromVpToken = async (
     }
 
     // Verify SD-JWT signature
-    const env = process.env.ENVIRONMENT;
     try {
-      await verifySdJwt(token, {
-        skipVerifyChain: env !== "prod",
-      });
+      await verifySdJwt(token, {});
     } catch (err) {
       logger.info(`SD-JWT verification failed: ${err}`);
       return { ok: false, error: { type: "INVALID_PARAMETER" } };

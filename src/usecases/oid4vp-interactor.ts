@@ -474,10 +474,7 @@ export const initOID4VPInteractor = (
 
         // Use verifySdJwt to expand disclosures and get complete payload
         const { verifySdJwt } = await import("../helpers/jwt-helper.js");
-        const env = process.env.ENVIRONMENT;
-        const verifiedResult = await verifySdJwt(learningCredentialJwt, {
-          skipVerifyChain: env !== "prod",
-        });
+        const verifiedResult = await verifySdJwt(learningCredentialJwt, {});
 
         logger.info(`Verified SD-JWT result keys: ${Object.keys(verifiedResult).join(', ')}`);
 
