@@ -248,6 +248,7 @@ describe("Verifier", () => {
   describe("#consumeRequest", () => {
     it("should update consumed_at successfully", async () => {
       const nonce = faker.string.uuid();
+      let consumeRequestCalled = false;
       verifierDatastore = {
         ...verifierDatastore,
         getRequest(requestId: string): Promise<VpRequestAtVerifier | null> {
@@ -259,16 +260,16 @@ describe("Verifier", () => {
             consumedAt: 0,
           });
         },
-        saveRequest: async (request: VpRequestAtVerifier) => {
-          assert.isAbove(request.consumedAt, 0);
-          saveRequestCalled = true;
+        consumeRequest: async (requestId: string, consumedAt: number) => {
+          assert.isAbove(consumedAt, 0);
+          consumeRequestCalled = true;
         },
       };
       const id = uuidv4();
       const verifier = initVerifier(verifierDatastore);
-      const getRequest = await verifier.consumeRequest(id);
-      if (getRequest.ok) {
-        assert.isTrue(saveRequestCalled);
+      const result = await verifier.consumeRequest(id);
+      if (result.ok) {
+        assert.isTrue(consumeRequestCalled);
       } else {
         assert.fail("should be ok");
       }

@@ -6,6 +6,47 @@
 - [OID4VP実装ドキュメント](./oid4vp-implementation.md) - メインドキュメント
 - [VP Token暗号化](./oid4vp-encryption.md) - HAIP準拠の暗号化フロー
 - [リファレンス](./oid4vp-reference.md) - セッション管理、環境変数
+- [ADR-001: VP Token検証の実行場所](./decisions/001-vp-token-verification-location.md) - 設計決定
+
+## 検証実行タイミング
+
+VP Token検証は **`POST /oid4vp/responses`** エンドポイントで実行されます（`/exchange`ではない）。
+
+```
+Wallet → POST /responses → JWE復号化 → VP Token検証 → 結果保存 → response_code返却
+                                              ↓
+                                      検証成功: committed
+                                      検証失敗: invalid_submission
+```
+
+### 検証コールバックパターン
+
+検証ロジックはコールバックとして注入されます。これにより、ライブラリ化時に検証ロジックをカスタマイズ可能です：
+
+```typescript
+export interface VpTokenVerificationCallback {
+  verifyCredential: (
+    credential: string,
+    nonce: string,
+  ) => Promise<Result<{ verified: true; decodedPayload?: any }, string>>;
+}
+
+// 使用例
+const verificationCallback: VpTokenVerificationCallback = {
+  verifyCredential: async (credential, nonce) => {
+    try {
+      const result = await verifySdJwt(credential, {});
+      return { ok: true, payload: { verified: true, decodedPayload: result } };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  },
+};
+
+await responseEndpoint.receiveAuthResponse(payload, {
+  verificationCallback,
+});
+```
 
 ## Learning Credential処理（DCQL）
 
@@ -229,14 +270,154 @@ export OID4VP_TRUST_ANCHOR_CERTIFICATES=/path/to/root.cer,/path/to/intermediate.
 
 JWT検証時のログ出力例:
 
+**X.509証明書チェーンで署名されたクレデンシャル**:
 ```
 [JWT Verification] Header: alg=ES256, kid=none, jwk=none, x5c=present (1 certs)
-[JWT Verification] Key source: x5c, alg=ES256
+[JWT Verification] Key source: x5c (certificate chain), verifying certificate chain...
+[Certificate Chain] Starting verification: 1 certificate(s) in chain
+[Certificate Chain] Trust anchors: system=150, custom=3, total=153
+[Certificate Chain] Leaf certificate: subject.CN=Cyber Security Cloud, Inc., ...
+[Certificate Chain] Verification SUCCESS
+[JWT Verification] Certificate chain verified, extracting public key from leaf certificate, alg=ES256
 [JWT Verification] Signature verification successful
+[requestId=xxx] Credential 1 verified for queryId: learning_credential (keySource=x5c, alg=ES256, certChainVerified=true)
+```
+
+**埋め込みJWKで署名されたクレデンシャル**:
+```
+[JWT Verification] Header: alg=ES256K, kid=none, jwk=present, x5c=none
+[JWT Verification] Key source: jwk (embedded key), no certificate chain verification needed, kty=EC, crv=secp256k1, alg=ES256K
+[JWT Verification] Signature verification successful
+[requestId=xxx] Credential 1 verified for queryId: learning_credential (keySource=jwk, alg=ES256K, certChainVerified=N/A)
 ```
 
 ### 検証失敗時
 
+**署名検証失敗**:
 ```
 [JWT Verification] Signature verification failed: JWSSignatureVerificationFailed: signature verification failed
+```
+
+**証明書チェーン検証失敗**（トラストアンカー不一致）:
+```
+[JWT Verification] Header: alg=ES256, kid=none, jwk=none, x5c=present (1 certs)
+[JWT Verification] Key source: x5c (certificate chain), verifying certificate chain...
+[Certificate Chain] Starting verification: 1 certificate(s) in chain
+[Certificate Chain] Trust anchors: system=150, custom=3, total=153
+[Certificate Chain] Leaf certificate: subject.CN=Learning Credential Issuer, subject.O=Educational Institution, issuer.CN=Learning Credential Issuer, issuer.O=Educational Institution
+[Certificate Chain] Executing certificate chain verification...
+[Certificate Chain] Verification FAILED: No valid certificate paths found
+[JWT Verification] Certificate chain verification failed: Error: Certificate chain verification failed: No valid certificate paths found
+```
+
+**原因と解決方法**:
+- 自己署名証明書がトラストアンカーに登録されていない
+- 中間証明書がチェーンに含まれていない
+- 解決: `OID4VP_TRUST_ANCHOR_CERTIFICATES`環境変数でカスタムトラストアンカーを追加
+
+## 検証結果の型
+
+### VerificationMetadata
+
+検証結果には、クレデンシャルがどのように検証されたかを示すメタデータが含まれます：
+
+```typescript
+export interface VerificationMetadata {
+  /** 鍵のソース: x5c（証明書チェーン）, jwk（埋め込みJWK）, secret */
+  keySource: "x5c" | "jwk" | "secret";
+  /** 使用されたアルゴリズム */
+  algorithm?: string;
+  /** 証明書チェーン検証の結果（x5cの場合のみ） */
+  certificateChainVerified?: boolean;
+}
+```
+
+### VpTokenVerificationResult
+
+```typescript
+export interface VpTokenVerificationResult {
+  credentials: Record<string, CredentialVerificationResult[]>;
+}
+
+export type CredentialVerificationResult =
+  | { status: "verified"; credential: string; payload?: any; verificationMetadata?: VerificationMetadata }
+  | { status: "invalid"; error: string; verificationMetadata?: VerificationMetadata }
+  | { status: "not_found" };
+```
+
+### 検証結果の例
+
+**X.509証明書チェーンで署名されたクレデンシャル**:
+```json
+{
+  "credentials": {
+    "learning_credential": [
+      {
+        "status": "verified",
+        "credential": "eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6Wy4uLl19...",
+        "payload": {
+          "vct": "urn:eu.europa.ec.eudi:learning:credential:1",
+          "issuing_authority": "Test University",
+          "family_name": "田中",
+          "given_name": "太郎"
+        },
+        "verificationMetadata": {
+          "keySource": "x5c",
+          "algorithm": "ES256",
+          "certificateChainVerified": true
+        }
+      }
+    ]
+  }
+}
+```
+
+**埋め込みJWKで署名されたクレデンシャル**:
+```json
+{
+  "credentials": {
+    "learning_credential": [
+      {
+        "status": "verified",
+        "credential": "eyJhbGciOiJFUzI1NksiLCJ0eXAiOiJkYytzZC1qd3QiLCJqd2siOnsuLi59fQ...",
+        "payload": {
+          "vct": "urn:eu.europa.ec.eudi:learning:credential:1",
+          "issuing_authority": "Test University"
+        },
+        "verificationMetadata": {
+          "keySource": "jwk",
+          "algorithm": "ES256K"
+        }
+      }
+    ]
+  }
+}
+```
+
+### エラーケース
+
+| status | error | 説明 |
+|--------|-------|------|
+| `invalid` | `nonce_mismatch` | Key Binding JWTのnonceがリクエストと一致しない |
+| `invalid` | `SD-JWT signature verification failed` | SD-JWT署名検証に失敗 |
+| `invalid` | `Certificate chain verification failed` | X.509証明書チェーン検証に失敗 |
+| `not_found` | - | 指定されたcredentialQueryIdに対応するクレデンシャルがない |
+
+## リクエストIDによるログトレース
+
+すべての検証ログにはリクエストIDプレフィックスが付与され、処理の追跡が可能です：
+
+```
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] Starting VP Token verification
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] Credential 1 verified for queryId: learning_credential
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] VP Token verification completed: [{"queryId":"learning_credential","results":["verified"]}]
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] VP Token verification succeeded
+```
+
+### ログのフィルタリング
+
+特定のリクエストのログを抽出する例：
+
+```bash
+grep "requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee" app.log
 ```

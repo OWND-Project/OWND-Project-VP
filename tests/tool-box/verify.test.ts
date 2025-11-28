@@ -24,8 +24,10 @@ describe("Verify@ToolBox", () => {
         const jwt = await issueJwt(header, credential, issuerKeyPair1);
         const result = await verifyJwt<TestCredential>(jwt);
         if (result.ok) {
-          const { foo } = result.payload;
+          const { foo } = result.payload.payload;
           assert.equal(foo.bar, "baz");
+          // 検証メタデータの確認
+          assert.equal(result.payload.verificationMetadata.keySource, "jwk");
         } else {
           assert.fail("should be verified");
         }

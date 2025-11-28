@@ -30,11 +30,18 @@ sequenceDiagram
     W->>W: 公開鍵でVP TokenをJWE暗号化
     W->>V: POST /oid4vp/responses (response=JWE)
 
-    Note over V: 3. VP Token復号化
+    Note over V: 3. VP Token復号化・検証
     V->>DB: encryption_private_jwk取得
     V->>V: ECDH-ES + A128GCMでJWE復号化
-    V->>V: vp_token, id_token, state抽出
-    V->>V: VP Token検証処理
+    V->>V: vp_token, state抽出
+    V->>V: VP Token検証（nonce + SD-JWT署名）
+    V->>DB: 検証結果保存（committed/invalid）
+    V->>W: response_code返却
+
+    Note over V: 4. Response Code交換
+    W->>V: POST /exchange (response_code)
+    V->>DB: 検証済み結果取得
+    V->>W: 検証済みクレデンシャル返却
 ```
 
 ## 実装詳細
@@ -192,7 +199,7 @@ WuGzxmcreYjpHGJoa17EBg  ←認証タグ (Base64URL)
 - `epk` (ephemeral public key): Walletが生成したエフェメラル公開鍵
 - Verifierの秘密鍵とWalletの`epk`を使ってECDHで共通鍵を導出
 
-### 4. Verifierによる復号化
+### 4. Verifierによる復号化と検証
 
 **関数**: `decryptJWE()` (src/helpers/jwt-helper.ts)
 
@@ -215,8 +222,9 @@ export const decryptJWE = async (jwe: string, privateJwk: any) => {
 **処理**: `receiveAuthResponse` (src/oid4vp/response-endpoint.ts)
 
 ```typescript
-const receiveAuthResponse = async (payload) => {
+const receiveAuthResponse = async (payload, opts) => {
   const { response, state } = payload;
+  logger.info(`[requestId=${state}] receiveAuthResponse start`);
 
   // 1. リクエスト取得
   const request = await getRequest(state || extractStateFromJWE(response));
@@ -225,11 +233,13 @@ const receiveAuthResponse = async (payload) => {
   // 2. 暗号化レスポンスの場合: JWE復号化
   let actualPayload;
   if (response) {
+    logger.info(`[requestId=${state}] Attempting JWE decryption`);
     // encryption_private_jwkを取得
     const privateJwk = JSON.parse(request.encryption_private_jwk);
 
     // JWE復号化
     actualPayload = await decryptJWE(response, privateJwk);
+    logger.info(`[requestId=${state}] JWE decryption successful`);
   } else {
     // 非暗号化レスポンス
     actualPayload = payload;
@@ -237,10 +247,26 @@ const receiveAuthResponse = async (payload) => {
 
   const { vp_token, state: actualState } = actualPayload;
 
-  // 3. 以降は通常のVP Token検証フロー
+  // 3. VP Token検証（検証コールバックが提供されている場合）
+  // ※ 復号化直後にVP Token検証を実行
+  let verificationResult;
+  if (opts?.verificationCallback && vp_token && request.nonce) {
+    logger.info(`[requestId=${state}] Starting VP Token verification`);
+    verificationResult = await verifyVpTokenWithCallback(
+      vp_token,
+      request.nonce,
+      opts.verificationCallback,
+      state,
+    );
+    logger.info(`[requestId=${state}] VP Token verification completed`);
+  }
+
+  // 4. レスポンス保存（検証結果を含む）
   // ...
 };
 ```
+
+**重要**: VP Token検証はJWE復号化の直後、`/responses`エンドポイントで実行されます。`/exchange`エンドポイントでは検証済みの結果を返却するのみです。
 
 ## 暗号化アルゴリズム仕様
 

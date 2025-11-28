@@ -316,6 +316,7 @@ state=req-123
 ```typescript
 const receiveAuthResponse = async (payload, presenter) => {
   const { response, vp_token, state } = payload;
+  logger.info(`[requestId=${state}] receiveAuthResponse start`);
 
   // 1. リクエスト検証
   const request = await getRequest(state);
@@ -325,26 +326,56 @@ const receiveAuthResponse = async (payload, presenter) => {
   // 2. 暗号化レスポンスの場合はJWE復号化
   let actualPayload;
   if (response) {
+    logger.info(`[requestId=${state}] Attempting JWE decryption`);
     const privateJwk = JSON.parse(request.encryption_private_jwk);
     actualPayload = await decryptJWE(response, privateJwk);
+    logger.info(`[requestId=${state}] JWE decryption successful`);
   } else {
     actualPayload = { vp_token, state };
   }
 
-  // 3. レスポンス保存
-  const responseCode = uuidv4();
-  await saveResponse({
-    id: responseCode,
-    requestId: actualPayload.state || state,
-    payload: { vpToken: actualPayload.vp_token },
-    issuedAt: Date.now() / 1000,
-    expiredIn: 600,
+  // 3. VP Token検証（検証コールバック経由）
+  // ※ 検証はresponse-endpointで実行し、結果を保存
+  const verificationCallback: VpTokenVerificationCallback = {
+    verifyCredential: async (credential, nonce) => {
+      try {
+        const result = await verifySdJwt(credential, {});
+        return { ok: true, payload: { verified: true, decodedPayload: result } };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+  };
+
+  logger.info(`[requestId=${state}] Starting VP Token verification`);
+  const result = await responseEndpoint.receiveAuthResponse(payload, {
+    verificationCallback,
   });
+
+  if (result.ok && result.payload.verificationResult) {
+    // 検証成功: セッション保存、状態更新
+    const verifiedCredentials = result.payload.verificationResult.credentials;
+    logger.info(`[requestId=${state}] VP Token verification succeeded`);
+    await stateRepository.putState(state, "committed");
+  }
+
+  logger.info(`[requestId=${state}] receiveAuthResponse end`);
 
   // 4. リダイレクトURI返却
   const redirectUri = request.redirectUriReturnedByResponseUri;
-  return presenter(redirectUri, responseCode);
+  return presenter(redirectUri, result.payload.responseCode);
 };
+```
+
+**検証コールバックインターフェース**:
+
+```typescript
+export interface VpTokenVerificationCallback {
+  verifyCredential: (
+    credential: string,
+    nonce: string,
+  ) => Promise<Result<{ verified: true; decodedPayload?: any }, string>>;
+}
 ```
 
 **レスポンス**:
@@ -358,50 +389,40 @@ const receiveAuthResponse = async (payload, presenter) => {
 
 **エンドポイント**: `POST /oid4vp/response-code/exchange?response_code=091535f699ea575c7937fa5f0f454aee`
 
+**注**: VP Token検証はStep 3の`/responses`エンドポイントで既に完了しています。このエンドポイントでは検証済みの結果を返却するのみです。
+
 **処理フロー**:
 
 ```typescript
 const exchangeAuthResponse = async (responseCode, transactionId, presenter) => {
-  // 1. レスポンス取得
-  const response = await getResponse(responseCode);
-  if (!response) return { ok: false, error: { type: "RESPONSE_IS_NOT_FOUND" } };
-  if (isExpired(response)) return { ok: false, error: { type: "RESPONSE_IS_EXPIRED" } };
+  logger.info(`[requestId=${requestId}] exchangeAuthResponse start`);
 
-  // 2. リクエスト取得（nonceを含む）
-  const request = await getRequest(response.requestId);
-  const { nonce } = request;
-
-  // 3. VP Token処理（DCQL形式）
-  // VP Tokenは { "learning_credential": ["SD-JWT..."] } の形式
-  const vpToken = response.payload.vpToken;
-
-  // 4. Learning Credential抽出・検証
-  const credential = await extractCredentialFromVpToken(
-    vpToken,
-    "learning_credential",  // credentialQueryId
-    nonce
+  // 1. レスポンス取得（レスポンスコード交換）
+  const exchange = await responseEndpoint.exchangeResponseCodeForAuthResponse(
+    responseCode,
+    transactionId,
   );
-  if (!credential.ok) {
-    await updatePostState(response.requestId, "invalid_submission");
-    return { ok: false, error: credential.error };
+  if (!exchange.ok) {
+    return { ok: false, error: handleEndpointError(exchange.error) };
   }
 
-  // 5. リクエストを消費（再利用防止）
-  await verifier.consumeRequest(response.requestId);
+  const { requestId } = exchange.payload;
 
-  // 6. セッション保存
-  await saveSession({
-    id: response.requestId,
-    learningCredentialJwt: credential.payload.learningCredential,
-  });
+  // 2. セッションから検証済みデータを取得
+  // ※ 検証はStep 3で完了済み
+  const session = await sessionRepository.getWaitCommitData(requestId);
+  if (!session.ok) {
+    return { ok: false, error: { type: "NOT_FOUND" } };
+  }
 
-  // 7. VP Token検証成功時、自動的にcommitted状態に遷移
-  await updatePostState(response.requestId, "committed");
+  logger.info(`[requestId=${requestId}] exchangeAuthResponse code exchange success`);
+  logger.info(`[requestId=${requestId}] exchangeAuthResponse end`);
 
-  // 8. レスポンス返却
-  return presenter(response.requestId, {
-    learningCredential: credential.payload.learningCredential,
-  });
+  // 3. 検証済みデータを返却（再検証不要）
+  return {
+    ok: true,
+    payload: presenter(requestId, session.payload),
+  };
 };
 ```
 
@@ -423,9 +444,29 @@ OID4VP Verifierの実装は、以下の特徴を持ちます：
 4. **SD-JWT対応**: Selective Disclosure JWTによる選択的開示
 5. **2層検証**: SD-JWT署名検証 + Key Binding JWT検証（nonce/aud確認）
 6. **Learning Credential検証**: 学習証明書の検証に対応
-7. **自動状態遷移**: VP Token検証成功時に自動的にcommitted状態へ遷移
-8. **セッション管理**: SQLiteベースのステートフル認証フロー
-9. **単一ノード構成**: シンプルな単一プロセスで動作
-10. **VP Token暗号化対応**: HAIP準拠のECDH-ES + A128GCM暗号化サポート
+7. **早期検証**: VP Token受信時（`/responses`）に即座に検証を実行
+8. **検証コールバック**: ライブラリ化を見据えた検証ロジックの注入パターン
+9. **自動状態遷移**: VP Token検証成功時に自動的にcommitted状態へ遷移
+10. **リクエストIDログ**: すべてのログに`[requestId=xxx]`プレフィックスを付与し、処理のトレースが可能
+11. **セッション管理**: SQLiteベースのステートフル認証フロー
+12. **単一ノード構成**: シンプルな単一プロセスで動作
+13. **VP Token暗号化対応**: HAIP準拠のECDH-ES + A128GCM暗号化サポート
 
 この実装により、Identity Walletから学習証明書（Learning Credential）を安全に受け取り、検証することが可能になっています。
+
+### ログトレースの例
+
+リクエストIDでログをフィルタリングすることで、処理の流れを追跡できます：
+
+```
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] Generated nonce: e90ceeb2-78e0-4165-9f47-7a84ff0533f2
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] generateAuthRequest end
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] Attempting JWE decryption
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] JWE decryption successful
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] Starting VP Token verification
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] Credential 1 verified for queryId: learning_credential
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] VP Token verification succeeded
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] receiveAuthResponse end
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] exchangeAuthResponse code exchange success
+[requestId=2a6fa0be-8e89-4be8-ab44-804cf755cdee] exchangeAuthResponse end
+```

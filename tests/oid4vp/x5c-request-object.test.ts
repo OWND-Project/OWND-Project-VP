@@ -1,4 +1,4 @@
-import { describe, it, before } from "mocha";
+import { describe, it, before, after } from "mocha";
 import { assert } from "chai";
 import ellipticJwk, { PrivateJwk } from "elliptic-jwk";
 import { decodeProtectedHeader, decodeJwt } from "jose";
@@ -13,6 +13,10 @@ import {
   validateClientId,
 } from "../../src/oid4vp/client-id-utils.js";
 import { generateCert, generateCertPem } from "./test-utils.js";
+import {
+  addCustomTrustedCertificate,
+  clearCustomTrustedCertificates,
+} from "../../src/helpers/certificate-loader.js";
 
 /**
  * Convert Base64 DER certificate to PEM format
@@ -30,17 +34,26 @@ describe("x5c Request Object Signature Verification", () => {
   let clientId: string;
 
   before(async () => {
-    // Generate test key pair and certificate
+    // Generate test key pair and certificate with CA extension (for trust anchor verification)
     privateJwk = ellipticJwk.newPrivateJwk("P-256");
     certBase64 = await generateCert(
       "/C=JP/ST=Tokyo/O=Test Verifier/CN=verifier.example.org",
       privateJwk,
+      true, // isCA=true for trust anchor
     );
     certPem = `-----BEGIN CERTIFICATE-----\n${certBase64}\n-----END CERTIFICATE-----`;
 
     // Calculate x509_hash from certificate
     x509Hash = calculateX509Hash(certPem);
     clientId = `x509_hash:${x509Hash}`;
+
+    // Register self-signed certificate as trust anchor for tests
+    addCustomTrustedCertificate(certBase64);
+  });
+
+  after(() => {
+    // Clean up custom trust anchors after tests
+    clearCustomTrustedCertificates();
   });
 
   describe("Request Object Generation with x5c", () => {
@@ -98,8 +111,11 @@ describe("x5c Request Object Signature Verification", () => {
 
       assert.isTrue(result.ok, "Signature verification should succeed");
       if (result.ok) {
-        assert.equal(result.payload.client_id, clientId);
-        assert.equal(result.payload.response_uri, "https://verifier.example.org/response");
+        assert.equal(result.payload.payload.client_id, clientId);
+        assert.equal(result.payload.payload.response_uri, "https://verifier.example.org/response");
+        // 検証メタデータの確認
+        assert.equal(result.payload.verificationMetadata.keySource, "x5c");
+        assert.equal(result.payload.verificationMetadata.certificateChainVerified, true);
       }
     });
 

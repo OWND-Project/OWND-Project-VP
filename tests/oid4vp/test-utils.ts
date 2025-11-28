@@ -12,11 +12,15 @@ import { getKeyAlgorithm, ellipticJwkToPem } from "../../src/tool-box/util.js";
 import * as datetimeUtils from "../../src/tool-box/datetime.js";
 import { issueJwt } from "../../src/helpers/jwt-helper.js";
 
-export const generateCert = async (subject: string, privateJwk: PrivateJwk) => {
+export const generateCert = async (subject: string, privateJwk: PrivateJwk, isCA = false) => {
   const keyPair = await ellipticJwkToPem(privateJwk as Parameters<typeof ellipticJwkToPem>[0]);
-  const extension = [
+  const extension: any[] = [
     { extname: "subjectAltName", array: [{ dns: "example.com" }] },
   ];
+  // Add CA extension if needed (for trust anchor tests)
+  if (isCA) {
+    extension.push({ extname: "basicConstraints", cA: true, critical: true });
+  }
   const csr = trimmer(
     generateCsr(
       subject,

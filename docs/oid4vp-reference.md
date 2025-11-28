@@ -161,6 +161,8 @@ sequenceDiagram
     V->>DB: 3. DCQL Query保存（requestsテーブル内）
     V->>DB: 4. PostState作成 (state: started)
     V->>F: 5. Authorization Request返却
+    Note over V: [requestId=xxx] Generated nonce
+
     F->>U: 6. QRコード表示
 
     U->>W: 7. QRコードスキャン
@@ -170,35 +172,41 @@ sequenceDiagram
 
     W->>W: 11. VP Token生成 (SD-JWT)
     W->>V: 12. POST /oid4vp/responses (VP Token)
-    V->>V: 13. VP Token検証
+    Note over V: [requestId=xxx] JWE decryption (if encrypted)
+    V->>V: 13. VP Token検証（nonce + SD-JWT署名）
+    Note over V: [requestId=xxx] VP Token verification
     V->>V: 14. VC検証 (X.509チェーン)
-    V->>DB: 15. Response Code保存
-    V->>W: 16. Response Code返却
+    V->>DB: 15. 検証結果 & Response Code保存
+    V->>DB: 16. PostState更新 (state: committed)
+    V->>W: 17. Response Code返却
 
-    W->>F: 17. リダイレクト
-    F->>V: 18. POST /oid4vp/response-code/exchange
-    V->>DB: 19. Response Code検証
-    V->>DB: 20. PostState更新 (state: committed - 自動)
-    V->>DB: 21. Session更新 & クリア
-    V->>F: 22. Credential Data返却
+    W->>F: 18. リダイレクト
+    F->>V: 19. POST /oid4vp/response-code/exchange
+    Note over V: [requestId=xxx] exchangeAuthResponse
+    V->>DB: 20. 検証済み結果取得（再検証不要）
+    V->>F: 21. Credential Data返却
 
-    F->>U: 23. 完了画面表示
+    F->>U: 22. 完了画面表示
 ```
+
+**注**: VP Token検証は`/responses`エンドポイント（Step 13-14）で実行されます。`/exchange`エンドポイントでは検証済みの結果を取得するのみです。
 
 ### セッション状態遷移
 
 ```mermaid
 stateDiagram-v2
     [*] --> started: POST /auth-request
-    started --> committed: VP Token検証成功 (自動遷移)
-    committed --> [*]: セッション完了・クリア
+    started --> committed: POST /responses (VP Token検証成功)
+    committed --> [*]: POST /exchange (セッション完了)
 
     started --> expired: タイムアウト (10分)
     expired --> [*]: クリーンアップ
 
-    started --> invalid_submission: VP Token検証失敗
+    started --> invalid_submission: POST /responses (VP Token検証失敗)
     invalid_submission --> [*]: セッション削除
 ```
+
+**注**: 状態遷移は`/responses`エンドポイントでVP Token検証後に行われます。`/exchange`エンドポイントの時点では既に`committed`または`invalid_submission`状態です。
 
 ## APIエンドポイント一覧
 

@@ -195,3 +195,20 @@ export function initTrustedCertificates(): void {
 export function getCustomTrustedCertificates(): string[] {
   return customTrustedCertificates;
 }
+
+/**
+ * プログラム的にカスタム信頼証明書を追加
+ * テスト用に自己署名証明書をトラストアンカーとして登録するために使用
+ * @param base64DerCert - Base64エンコードされたDER形式の証明書
+ */
+export function addCustomTrustedCertificate(base64DerCert: string): void {
+  customTrustedCertificates.push(base64DerCert);
+}
+
+/**
+ * カスタム信頼証明書をクリア
+ * テスト後のクリーンアップ用
+ */
+export function clearCustomTrustedCertificates(): void {
+  customTrustedCertificates = [];
+}

@@ -24,7 +24,7 @@ import {
 } from "@meeco/sd-jwt";
 import { PublicKeySetting } from "../oid4vp/types.js";
 import { verifyCertificateChain } from "../tool-box/x509/x509.js";
-import { verifyJwt } from "../tool-box/verify.js";
+import { verifyJwt, JwtVerificationMetadata } from "../tool-box/verify.js";
 import getLogger from "../services/logging-service.js";
 
 const logger = getLogger();
@@ -96,15 +96,29 @@ export const issueSdJwt = async (
   return await issueSDJWT(header, payload, disclosureFrame, opts);
 };
 
+/**
+ * SD-JWT検証結果（メタデータ付き）
+ */
+export interface SdJwtVerificationResult {
+  decodedPayload: any;
+  verificationMetadata: JwtVerificationMetadata;
+}
+
 export const verifySdJwt = async (
   compactSDJWT: string,
   publicKeySetting: PublicKeySetting = {},
-) => {
+): Promise<SdJwtVerificationResult> => {
+  // 検証メタデータをキャプチャするための変数
+  let capturedMetadata: JwtVerificationMetadata | undefined;
+
   // https://github.com/Meeco/sd-jwt?tab=readme-ov-file#verifysdjwt-example
   const verifier = async (__jwt: string) => {
     const result = await verifyJwt(__jwt, {
       secret: publicKeySetting.secret,
     });
+    if (result.ok) {
+      capturedMetadata = result.payload.verificationMetadata;
+    }
     return result.ok;
   };
 
@@ -152,12 +166,16 @@ export const verifySdJwt = async (
     opts,
   );
 
-  return sdJWTwithDisclosedClaims;
-  // todo error handling
-  // try {
-  // } catch (e) {
-  //   console.log("Could not verify SD-JWT", e);
-  // }
+  // 検証メタデータが取得できなかった場合のフォールバック
+  const verificationMetadata = capturedMetadata || {
+    keySource: "jwk" as const,
+    algorithm: undefined,
+  };
+
+  return {
+    decodedPayload: sdJWTwithDisclosedClaims,
+    verificationMetadata,
+  };
 };
 
 export const decodeSdJwt = (sdjwt: string) => {

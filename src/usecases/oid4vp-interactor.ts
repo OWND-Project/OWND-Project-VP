@@ -7,7 +7,10 @@ import {
   ResponseEndpoint,
   generateClientMetadata,
   GenerateRequestObjectOptions,
+  VpTokenVerificationCallback,
+  CredentialVerificationResult,
 } from "../oid4vp/index.js";
+import { verifySdJwt } from "../helpers/jwt-helper.js";
 import {
   AuthRequestPresenter,
   AuthResponsePresenter,
@@ -106,7 +109,7 @@ export const initOID4VPInteractor = (
     // Generate nonce at request creation time (only once)
     const { v4: uuidv4 } = await import("uuid");
     const nonce = uuidv4();
-    logger.info(`Generated nonce for request ${request.id}: ${nonce}`);
+    logger.info(`[requestId=${request.id}] Generated nonce: ${nonce}`);
 
     // Generate DCQL query for learning credential
     // Use provided queries or default to all claims
@@ -172,7 +175,7 @@ export const initOID4VPInteractor = (
       expiredIn: Env().expiredIn.postSession,
     });
 
-    logger.info("generateAuthRequest end");
+    logger.info(`[requestId=${request.id}] generateAuthRequest end`);
     return {
       ok: true,
       payload: presenter(vpRequest, request.id, request.transactionId),
@@ -196,7 +199,7 @@ export const initOID4VPInteractor = (
 
     // Verify that nonce exists (should have been saved during generateAuthRequest)
     if (!request.nonce) {
-      logger.error(`Request ${requestId} does not have a saved nonce`);
+      logger.error(`[requestId=${requestId}] Request does not have a saved nonce`);
       return { ok: false, error: { type: "INVALID_PARAMETER" } };
     }
 
@@ -210,7 +213,7 @@ export const initOID4VPInteractor = (
       try {
         dcqlCredentialQueries = JSON.parse(request.dcqlQuery);
       } catch (e) {
-        logger.error(`Failed to parse dcqlQuery: ${e}`);
+        logger.error(`[requestId=${requestId}] Failed to parse dcqlQuery: ${e}`);
         dcqlCredentialQueries = [];
       }
     } else {
@@ -279,7 +282,7 @@ export const initOID4VPInteractor = (
     const issuerJwk = JSON.parse(Env().verifier.jwk);
     const requestObjectJwt = await generateRequestObjectJwt(clientId, issuerJwk, opts);
 
-    logger.info(`Generated Request Object JWT for request ${requestId} with saved nonce ${request.nonce}`);
+    logger.info(`[requestId=${requestId}] Generated Request Object JWT with saved nonce ${request.nonce}`);
 
     return {
       ok: true,
@@ -300,9 +303,10 @@ export const initOID4VPInteractor = (
   };
 
   /**
-   *
-   * @param payload
-   * @param presenter
+   * Walletからの認証レスポンスを受信・処理
+   * VP Token検証を実行し、結果に基づいて状態を更新
+   * @param payload - Walletからのレスポンスペイロード
+   * @param presenter - レスポンス変換関数
    */
   const receiveAuthResponse = async <T>(
     payload: any,
@@ -310,17 +314,35 @@ export const initOID4VPInteractor = (
   ): Promise<Result<T, NotSuccessResult>> => {
     logger.info("receiveAuthResponse start");
 
+    // 検証コールバックを定義（SD-JWT署名検証）
+    const verificationCallback: VpTokenVerificationCallback = {
+      verifyCredential: async (credential, _nonce) => {
+        try {
+          const result = await verifySdJwt(credential, {});
+          return {
+            ok: true,
+            payload: {
+              verified: true,
+              decodedPayload: result.decodedPayload,
+              verificationMetadata: result.verificationMetadata,
+            },
+          };
+        } catch (err) {
+          logger.error(`SD-JWT verification failed: ${err}`);
+          return { ok: false, error: String(err) };
+        }
+      },
+    };
+
+    // response-endpointに委譲（検証コールバック付き）
     const result = await responseEndpoint.receiveAuthResponse(payload, {
       expiredIn: Env().expiredIn.response,
+      verificationCallback,
     });
 
-    logger.info("receiveAuthResponse end");
-    if (result.ok) {
-      const { redirectUri, responseCode } = result.payload;
-      return { ok: true, payload: presenter(redirectUri!, responseCode!) };
-    } else {
+    if (!result.ok) {
       const { type } = result.error;
-      console.error(type);
+      logger.error(`receiveAuthResponse error: ${type}`);
       if (type === "REQUEST_ID_IS_NOT_FOUND") {
         return { ok: false, error: { type: "NOT_FOUND" } };
       } else if (type === "REQUEST_ID_IS_EXPIRED") {
@@ -329,6 +351,39 @@ export const initOID4VPInteractor = (
         return { ok: false, error: { type: "INVALID_PARAMETER" } };
       }
     }
+
+    const { redirectUri, responseCode, requestId, verificationResult } =
+      result.payload;
+
+    // 検証結果に基づいて状態更新とセッション保存
+    if (verificationResult) {
+      const learningCredentials =
+        verificationResult.credentials?.learning_credential || [];
+      const verifiedCredentials = learningCredentials.filter(
+        (c): c is CredentialVerificationResult & { status: "verified" } =>
+          c.status === "verified",
+      );
+
+      if (verifiedCredentials.length > 0) {
+        // 検証成功: クレデンシャルを保存して状態をcommittedに
+        const credential = verifiedCredentials[0].credential;
+        logger.info(`[requestId=${requestId}] VP Token verification succeeded`);
+        await sessionRepository.putWaitCommitData(
+          requestId,
+          "", // idToken（現在は空）
+          credential,
+          { expiredIn: Env().expiredIn.postSession },
+        );
+        await stateRepository.putState(requestId, "committed");
+      } else {
+        // 検証失敗: 状態をinvalid_submissionに
+        logger.info(`[requestId=${requestId}] VP Token verification failed: no verified credentials`);
+        await stateRepository.putState(requestId, "invalid_submission");
+      }
+    }
+
+    logger.info(`[requestId=${requestId}] receiveAuthResponse end`);
+    return { ok: true, payload: presenter(redirectUri!, responseCode!) };
   };
 
   const updateState2InvalidSubmission = async (requestId: string) => {
@@ -336,8 +391,8 @@ export const initOID4VPInteractor = (
   };
 
   /**
-   * Exchange response code for auth response and process credential
-   * VP Token検証成功後、自動的にcommitted状態に遷移
+   * Exchange response code for auth response
+   * 検証はreceiveAuthResponseで完了済み、セッションデータを取得して返却
    * @param responseCode
    * @param transactionId
    * @param presenter
@@ -347,85 +402,62 @@ export const initOID4VPInteractor = (
     transactionId: string | undefined,
     presenter: ExchangeResponseCodePresenter<T>,
   ): Promise<Result<T, NotSuccessResult>> => {
-    logger.info("consumeAuthResponse start");
+    logger.info("exchangeAuthResponse start");
 
-    // exchange response code for auth response
-    logger.info(`exchangeResponseCode: code=${responseCode}, transactionId=${transactionId}`);
-    const exchange = await responseEndpoint.exchangeResponseCodeForAuthResponse(
-      responseCode,
-      transactionId,
-    );
+    // 1. レスポンスコードを交換してrequestIdを取得
+    const exchange =
+      await responseEndpoint.exchangeResponseCodeForAuthResponse(
+        responseCode,
+        transactionId,
+      );
     if (!exchange.ok) {
-      logger.info(`exchange failed: ${JSON.stringify(exchange.error)}`);
+      logger.info(`exchangeAuthResponse failed: ${JSON.stringify(exchange.error)}`);
       return { ok: false, error: handleEndpointError(exchange.error) };
     }
-    logger.info(`exchange success: requestId=${exchange.payload.requestId}`);
 
-    // id token
     const { requestId, payload } = exchange.payload;
-
-    // nonce
-    logger.info(`getRequest for requestId=${requestId}`);
-    const getRequest = await verifier.getRequest(requestId);
-    if (!getRequest.ok) {
-      logger.info(`getRequest failed: ${JSON.stringify(getRequest.error)}`);
-      return {
-        ok: false,
-        error: handleRequestError(requestId, getRequest.error),
-      };
-    }
-    logger.info(`getRequest success, nonce=${getRequest.payload.nonce}`);
-    const { nonce } = getRequest.payload;
-
-    // id token (SIOPv2 validation removed - use standard OID4VP validation)
+    logger.info(`[requestId=${requestId}] exchangeAuthResponse code exchange success`);
     const { idToken } = payload;
 
-    logger.info("extractCredentialFromVpToken start");
-    // Process learning credential using DCQL flow (direct VP Token extraction)
-    const credentialQueryId = "learning_credential";
-    const cred = await extractCredentialFromVpToken(
-      payload.vpToken,
-      credentialQueryId,
-      nonce
-    );
-    if (!cred.ok) {
-      logger.info(`credential extraction failed : ${JSON.stringify(cred.error)}`);
-      await updateState2InvalidSubmission(requestId);
-      return { ok: false, error: cred.error };
+    // 2. セッションから検証済みデータを取得
+    const sessionResult =
+      await sessionRepository.getSessionByRequestId<WaitCommitData>(requestId);
+    if (!sessionResult.ok) {
+      // セッションが見つからない = 検証失敗またはまだ処理されていない
+      logger.info(`[requestId=${requestId}] Session not found: ${sessionResult.error.type}`);
+      if (sessionResult.error.type === "NOT_FOUND") {
+        // 状態を確認してエラー詳細を返す
+        const state = await stateRepository.getState(requestId);
+        if (state?.value === "invalid_submission") {
+          return { ok: false, error: { type: "INVALID_PARAMETER" } };
+        }
+        return { ok: false, error: { type: "NOT_FOUND" } };
+      }
+      if (sessionResult.error.type === "EXPIRED") {
+        return { ok: false, error: { type: "EXPIRED" } };
+      }
+      return { ok: false, error: { type: "UNEXPECTED_ERROR" } };
     }
 
-    // consume vp_token
+    const session = sessionResult.payload;
+    const learningCredential = session.data.learningCredentialJwt;
+
+    // 3. リクエストを消費済みとしてマーク
     const consumeRequest = await verifier.consumeRequest(requestId);
     if (!consumeRequest.ok) {
-      logger.info(
-        `consumeRequest is not ok : ${JSON.stringify(consumeRequest.error)}`,
-      );
+      logger.info(`[requestId=${requestId}] consumeRequest failed: ${consumeRequest.error.type}`);
       return {
         ok: false,
         error: handleRequestError(requestId, consumeRequest.error),
       };
     }
 
-    // Extract credential data
-    const { learningCredential } = cred.payload;
-
-    // Save session data
-    await sessionRepository.putWaitCommitData(
-      requestId,
-      idToken!,
-      learningCredential,
-      { expiredIn: Env().expiredIn.postSession },
-    );
-
-    // VP Token検証成功後、自動的にcommitted状態に遷移
-    await stateRepository.putState(requestId, "committed");
-
-    logger.info("consumeAuthResponse end");
+    logger.info(`[requestId=${requestId}] exchangeAuthResponse end`);
     return {
       ok: true,
       payload: presenter(requestId, {
-        sub: "", // ID token validation removed
-        id_token: idToken!,
+        sub: "",
+        id_token: idToken || "",
         learningCredential: learningCredential,
       }),
     };
