@@ -60,11 +60,16 @@ OID4VP_REQUEST_HOST=oid4vp://localhost
 OID4VP_REQUEST_URI=http://localhost:3000/oid4vp/request
 OID4VP_RESPONSE_URI=http://localhost:3000/oid4vp/responses
 OID4VP_REDIRECT_URI=http://localhost:3001/callback
-OID4VP_PRESENTATION_DEFINITION_URI=http://localhost:3000/oid4vp/presentation-definition
+
+# VP Token暗号化（HAIP準拠、オプション）
+OID4VP_VP_TOKEN_ENCRYPTION_ENABLED=false
 
 # Verifier証明書（開発環境）
 OID4VP_VERIFIER_JWK={"kty":"EC","crv":"P-256",...}
 OID4VP_VERIFIER_X5C=<PEM形式の証明書>
+
+# カスタムトラストアンカー（オプション）
+# OID4VP_TRUST_ANCHOR_CERTIFICATES=/path/to/root.cer,/path/to/intermediate.cer
 
 # SQLite設定
 DATABASE_FILEPATH=./database.sqlite
@@ -209,7 +214,7 @@ interface SessionRepository {
 - **ファイル**: kebab-case (`oid4vp-interactor.ts`)
 - **クラス/インターフェース**: PascalCase (`SessionRepository`)
 - **関数/変数**: camelCase (`generateAuthRequest`)
-- **定数**: UPPER_SNAKE_CASE (`INPUT_DESCRIPTOR_ID1`)
+- **定数**: UPPER_SNAKE_CASE (`CREDENTIAL_QUERY_ID`)
 - **プライベート関数**: `_`プレフィックス (`_validateRequest`)
 
 ### コメント
@@ -230,10 +235,10 @@ export const generateAuthRequest = async <T>(
     // ...
   });
 
-  // 2. Presentation Definition生成
-  const pd = await verifier.generatePresentationDefinition(
+  // 2. DCQL Query生成
+  const dcqlQuery = verifier.generateDcqlQuery([
     // ...
-  );
+  ]);
 
   return { ok: true, payload: presenter(authRequest, request.id) };
 };
@@ -415,18 +420,20 @@ describe("Verifier", () => {
     await cleanupTestDatastore(datastore);
   });
 
-  describe("generatePresentationDefinition", () => {
-    it("should generate valid presentation definition", async () => {
-      const pd = await verifier.generatePresentationDefinition(
-        inputDescriptors,
-        submissionRequirements,
-        "Test purpose",
-        "Test name"
-      );
+  describe("generateDcqlQuery", () => {
+    it("should generate valid DCQL query", () => {
+      const dcqlQuery = verifier.generateDcqlQuery([
+        {
+          id: "learning_credential",
+          format: "dc+sd-jwt",
+          meta: { vct_values: ["urn:eu.europa.ec.eudi:learning:credential:1"] },
+          claims: [{ path: ["family_name"] }, { path: ["given_name"] }],
+        },
+      ]);
 
-      expect(pd).to.have.property("id");
-      expect(pd.input_descriptors).to.be.an("array");
-      expect(pd.submission_requirements).to.be.an("array");
+      expect(dcqlQuery).to.have.property("credentials");
+      expect(dcqlQuery.credentials).to.be.an("array");
+      expect(dcqlQuery.credentials[0]).to.have.property("id", "learning_credential");
     });
   });
 });
@@ -573,11 +580,18 @@ kill -9 <PID>
 
 ## 参考資料
 
-- [OID4VP Specification](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
-- [DIF Presentation Exchange](https://identity.foundation/presentation-exchange/)
+- [OID4VP 1.0 Specification](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
+- [DCQL (Digital Credentials Query Language)](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l)
 - [SD-JWT Specification](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-selective-disclosure-jwt)
 - [Koa Documentation](https://koajs.com/)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs/)
+
+### プロジェクトドキュメント
+
+- [OID4VP実装ドキュメント](./oid4vp-implementation.md) - メインドキュメント
+- [VP Token検証プロセス](./oid4vp-verification.md) - SD-JWT検証、DCQL Query定義
+- [VP Token暗号化](./oid4vp-encryption.md) - HAIP準拠の暗号化フロー
+- [リファレンス](./oid4vp-reference.md) - セッション管理、環境変数、DB
 
 ---
 
