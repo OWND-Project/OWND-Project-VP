@@ -25,6 +25,9 @@ import {
 import { PublicKeySetting } from "../oid4vp/types.js";
 import { verifyCertificateChain } from "../tool-box/x509/x509.js";
 import { verifyJwt } from "../tool-box/verify.js";
+import getLogger from "../services/logging-service.js";
+
+const logger = getLogger();
 
 // interface JWTHeader {
 //   alg: string;
@@ -108,9 +111,23 @@ export const verifySdJwt = async (
   const keyBindingVerifier = async (kbjwt: string, holderJWK: JWK) => {
     // check against kb-jwt.aud && kb-jwt.nonce
     const protectedHeader = decodeProtectedHeader(kbjwt);
-    const { alg } = protectedHeader;
+    const { alg, kid } = protectedHeader;
+
+    // Log KB-JWT header information
+    logger.info(
+      `[KB-JWT Verification] Header: alg=${alg || "none"}, kid=${kid || "none"}`,
+    );
+
+    // Log holder public key information
+    logger.info(
+      `[KB-JWT Verification] Holder key: kty=${holderJWK.kty || "unknown"}, ` +
+        `crv=${holderJWK.crv || "N/A"}, kid=${holderJWK.kid || "none"}`,
+    );
+
     const holderKey = await importJWK(holderJWK, alg);
     const verifiedKbJWT = await jwtVerify(kbjwt, holderKey);
+
+    logger.info(`[KB-JWT Verification] Key binding verification successful`);
     return !!verifiedKbJWT;
   };
 

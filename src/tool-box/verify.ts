@@ -93,23 +93,41 @@ export const verifyJwt = async <T>(
   const { secret } = options;
   let key: KeyLike | Uint8Array;
   const protectedHeader = decodeProtectedHeader(__jwt);
-  const { jwk, x5c, alg } = protectedHeader;
+  const { jwk, x5c, alg, kid } = protectedHeader;
+
+  // Log JWT header information
+  logger.info(
+    `[JWT Verification] Header: alg=${alg || "none"}, kid=${kid || "none"}, ` +
+      `jwk=${jwk ? "present" : "none"}, x5c=${x5c ? `present (${x5c.length} certs)` : "none"}`,
+  );
+
   if (x5c) {
     // Always verify certificate chain using system + custom trusted certificates
     await verifyCertificateChain(x5c);
     const x509 = `-----BEGIN CERTIFICATE-----\n${x5c![0]}\n-----END CERTIFICATE-----`;
     key = await importX509(x509, alg || "ES256");
+    logger.info(
+      `[JWT Verification] Key source: x5c, alg=${alg || "ES256"}`,
+    );
   } else if (jwk) {
     key = await importJWK(jwk, alg);
+    // Log JWK key details (kty, crv for EC keys)
+    logger.info(
+      `[JWT Verification] Key source: jwk, kty=${jwk.kty || "unknown"}, ` +
+        `crv=${jwk.crv || "N/A"}, kid=${kid || "none"}, alg=${alg || "none"}`,
+    );
   } else if (secret) {
     key = secret;
+    logger.info(`[JWT Verification] Key source: secret`);
   } else {
     throw new Error("Unsupported public key type");
   }
   try {
     const { payload } = await jose.jwtVerify<T>(__jwt, key);
+    logger.info(`[JWT Verification] Signature verification successful`);
     return { ok: true, payload };
   } catch (error) {
+    logger.info(`[JWT Verification] Signature verification failed: ${error}`);
     return { ok: false, error };
   }
 };

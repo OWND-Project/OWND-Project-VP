@@ -30,6 +30,9 @@ describe("Verifier", () => {
       saveRequest: async (_request: VpRequestAtVerifier) => {
         saveRequestCalled = true;
       },
+      consumeRequest: async (_requestId: string, _consumedAt: number) => {
+        // no-op for tests
+      },
     };
     verifier = initVerifier(verifierDatastore);
   });

@@ -94,7 +94,7 @@ describe("x5c Request Object Signature Verification", () => {
       const jwt = await generateRequestObjectJwt(clientId, privateJwk, options);
 
       // Verify signature using verifyJwt (which extracts public key from x5c)
-      const result = await verifyJwt<any>(jwt, { skipVerifyChain: true });
+      const result = await verifyJwt<any>(jwt, {});
 
       assert.isTrue(result.ok, "Signature verification should succeed");
       if (result.ok) {
@@ -118,7 +118,7 @@ describe("x5c Request Object Signature Verification", () => {
       const tamperedPayload = parts[1].slice(0, -5) + "XXXXX";
       const tamperedJwt = `${parts[0]}.${tamperedPayload}.${parts[2]}`;
 
-      const result = await verifyJwt<any>(tamperedJwt, { skipVerifyChain: true });
+      const result = await verifyJwt<any>(tamperedJwt, {});
 
       assert.isFalse(result.ok, "Tampered JWT should fail verification");
     });
@@ -144,7 +144,7 @@ describe("x5c Request Object Signature Verification", () => {
       );
 
       // Verification should fail because signature doesn't match x5c public key
-      const result = await verifyJwt<any>(jwt, { skipVerifyChain: true });
+      const result = await verifyJwt<any>(jwt, {});
 
       assert.isFalse(result.ok, "JWT signed with wrong key should fail verification");
     });

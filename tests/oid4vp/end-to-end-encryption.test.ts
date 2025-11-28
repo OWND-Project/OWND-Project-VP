@@ -61,6 +61,13 @@ describe("End-to-End Encryption Flow", () => {
       getRequest: async (requestId: string): Promise<VpRequestAtVerifier | null> => {
         return savedVerifierRequests.get(requestId) || null;
       },
+      consumeRequest: async (requestId: string, consumedAt: number) => {
+        const request = savedVerifierRequests.get(requestId);
+        if (request) {
+          request.consumedAt = consumedAt;
+          savedVerifierRequests.set(requestId, request);
+        }
+      },
     };
 
     responseEndpoint = initResponseEndpoint(responseDatastore);

@@ -1,5 +1,5 @@
 import { decodeSDJWT } from "@meeco/sd-jwt";
-import { decodeJwt } from "jose";
+import { decodeJwt, decodeProtectedHeader } from "jose";
 
 import { Result } from "../../tool-box/index.js";
 import { verifySdJwt } from "../../helpers/jwt-helper.js";
@@ -39,6 +39,22 @@ export const extractCredentialFromVpToken = async (
 
     // Decode SD-JWT
     const decoded = decodeSDJWT(token);
+
+    // Extract Issuer JWT from SD-JWT (first part before ~)
+    const issuerJwt = token.split("~")[0];
+
+    // Log SD-JWT Issuer JWT header information
+    const issuerHeader = decodeProtectedHeader(issuerJwt);
+    logger.info(
+      `[SD-JWT] Issuer JWT Header: alg=${issuerHeader.alg || "none"}, ` +
+        `kid=${issuerHeader.kid || "none"}, ` +
+        `x5c=${Array.isArray(issuerHeader.x5c) ? `present (${issuerHeader.x5c.length} certs)` : "none"}, ` +
+        `jwk=${issuerHeader.jwk ? `present (kty=${issuerHeader.jwk.kty}, crv=${issuerHeader.jwk.crv || "N/A"})` : "none"}`,
+    );
+    logger.info(
+      `[SD-JWT] Structure: disclosures=${decoded.disclosures?.length || 0}, ` +
+        `keyBindingJWT=${decoded.keyBindingJWT ? "present" : "none"}`,
+    );
 
     // Verify key binding JWT contains correct nonce
     if (!decoded.keyBindingJWT) {
